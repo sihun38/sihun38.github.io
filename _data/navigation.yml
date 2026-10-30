@@ -1,0 +1,23 @@
+main:
+  - title: "About"
+    url: /about/
+  - title: "Categories"
+    url: /categories/
+  - title: "Tags"
+    url: /tags/
+
+categories:
+  - title: "Categories"
+    children:
+      - title: "개발"
+        url: /categories/dev/
+      - title: "CTF/Wargame"
+        url: /categories/ctf/
+      - title: "Bug Bounty"
+        url: /categories/bugbounty/
+      - title: "블로그/기술문서"
+        url: /categories/docs/
+      - title: "논문/컨퍼런스"
+        url: /categories/paper/
+      - title: "공모전/자격증"
+        url: /categories/contest/
