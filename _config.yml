@@ -5,8 +5,8 @@ locale: "ko-KR"
 title: ".lienoe"
 subtitle: "Pwnable · CTF · Bug Bounty"
 name: "노시훈"
-url: "https://sihun.github.io"
-repository: "sihun38/sihun.github.io"
+url: "https://sihun38.github.io"
+repository: "sihun38/sihun38.github.io"
 timezone: Asia/Seoul
 search: true
 
