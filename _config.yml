@@ -11,15 +11,14 @@ timezone: Asia/Seoul
 search: true
 
 author:
-  name: "노시훈"
+  name: "Lienoe"
   avatar: "/assets/images/avatar.png"
-  bio: "lienoe"
-  location: "Busan, Korea"
   links:
     - label: "GitHub"
       icon: "fab fa-fw fa-github"
       url: "https://github.com/sihun38"
-
+      url: "https://signs63381.tistory.com/
+      
 include:
   - _pages
 
