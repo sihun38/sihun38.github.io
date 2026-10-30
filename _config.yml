@@ -17,7 +17,10 @@ author:
     - label: "GitHub"
       icon: "fab fa-fw fa-github"
       url: "https://github.com/sihun38"
-      url: "https://signs63381.tistory.com/
+    - label: "Tistory"
+      icon: "fas fa-fw fa-blog"
+      url: "https://signs63381.tistory.com/"
+
       
 include:
   - _pages
