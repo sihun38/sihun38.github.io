@@ -7,12 +7,12 @@ subtitle: "Pwnable · CTF · Bug Bounty"
 name: "노시훈"
 url: "https://sihun38.github.io"
 repository: "sihun38/sihun38.github.io"
-timezone: Asia/Seoul
 search: true
 
 author:
-  name: "Lienoe"
+  name: "노시훈"
   avatar: "/assets/images/avatar.png"
+  bio: ".Lienoe"
   links:
     - label: "GitHub"
       icon: "fab fa-fw fa-github"
