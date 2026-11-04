@@ -7,11 +7,13 @@ subtitle: "Pwnable · CTF · Bug Bounty"
 name: "노시훈"
 url: "https://sihun38.github.io"
 repository: "sihun38/sihun38.github.io"
+timezone: Asia/Seoul
+future: true
 search: true
 
 author:
   name: "노시훈"
-  avatar: "/assets/images/avatar.png"
+  avatar: "https://github.com/sihun38.png"
   bio: ".Lienoe"
   links:
     - label: "GitHub"
@@ -21,15 +23,10 @@ author:
       icon: "fas fa-fw fa-blog"
       url: "https://signs63381.tistory.com/"
 
-      
 include:
   - _pages
 
-paginate: 5
-paginate_path: /page:num/
-
 plugins:
-  - jekyll-paginate
   - jekyll-sitemap
   - jekyll-feed
   - jekyll-include-cache
