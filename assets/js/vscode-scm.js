@@ -89,6 +89,14 @@
     return date.getFullYear() + '-' + padNumber(date.getMonth() + 1) + '-' + padNumber(date.getDate());
   }
 
+  function formatFrontMatterDate(date) {
+    var offsetMinutes = -date.getTimezoneOffset();
+    var sign = offsetMinutes >= 0 ? '+' : '-';
+    var absolute = Math.abs(offsetMinutes);
+    return formatDateOnly(date) + ' ' + padNumber(date.getHours()) + ':' + padNumber(date.getMinutes()) + ':00 ' +
+      sign + padNumber(Math.floor(absolute / 60)) + padNumber(absolute % 60);
+  }
+
   function getFileName(path) {
     return path.split('/').pop();
   }
@@ -283,6 +291,51 @@
     });
   }
 
+  /* ---------- post validation (warn before commit) ---------- */
+
+  function readFrontMatter(content) {
+    var match = /^---\r?\n([\s\S]*?)\r?\n---(\r?\n|$)/.exec(content);
+    return match ? match[1] : null;
+  }
+
+  function readCategories(frontMatter) {
+    var match = /^categories:\s*\[([^\]]*)\]/m.exec(frontMatter);
+    if (!match) {
+      return [];
+    }
+    return match[1].split(',').map(function (item) {
+      return item.trim().replace(/^["']|["']$/g, '');
+    }).filter(Boolean);
+  }
+
+  function findPostProblems(path, content, folders) {
+    if (path.indexOf('_posts/') !== 0) {
+      return [];
+    }
+    var frontMatter = readFrontMatter(content);
+    if (frontMatter === null) {
+      return ['맨 위에 --- 로 감싼 front matter가 없어. 블로그 Explorer에 안 보여.'];
+    }
+    var problems = [];
+    if (!/^title:/m.test(frontMatter)) {
+      problems.push('title 이 없어.');
+    }
+    var categories = readCategories(frontMatter);
+    var folderTitles = folders.map(function (folder) { return folder.title; });
+    var matched = categories.some(function (category) { return folderTitles.indexOf(category) !== -1; });
+    if (!matched) {
+      problems.push('categories 가 폴더 이름과 안 맞아. 가능한 값: ' + folderTitles.join(', '));
+    }
+    return problems;
+  }
+
+  function confirmPostProblems(problems) {
+    if (problems.length === 0) {
+      return true;
+    }
+    return window.confirm('이 글은 블로그에 제대로 안 보일 수 있어.\n\n- ' + problems.join('\n- ') + '\n\n그래도 커밋할까?');
+  }
+
   /* ---------- file editor overlay ---------- */
 
   function updateGutter(gutterNode, text) {
@@ -401,6 +454,10 @@
       }
       var message = messageField.value.trim() || ('post: update ' + getFileName(current.path));
       var content = textArea.value;
+      if (!confirmPostProblems(findPostProblems(current.path, content, context.siteData.folders))) {
+        terminal.printLine(terminal.createSpan('commit cancelled', 'term-dim'));
+        return;
+      }
       setBusy(true);
       saveButton.disabled = true;
       putFile(context.repo, current.path, content, current.sha, message)
@@ -557,6 +614,7 @@
     var template = [
       '---',
       'title: "제목을 입력하세요"',
+      'date: ' + formatFrontMatterDate(now),
       'categories: [' + folder.title + ']',
       'tags: []',
       '---',
