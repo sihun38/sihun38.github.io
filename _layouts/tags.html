@@ -1,0 +1,31 @@
+---
+layout: default
+---
+{%- assign shell_user = site.title | remove: '.' | downcase -%}
+<section class="screen">
+  <h1 class="screen__title"><span class="md-mark">~/</span>tags.json</h1>
+  {{ content }}
+
+  <p class="cmd"><span class="prompt__user">{{ shell_user }}@research</span>:<span class="prompt__path">~</span><span class="prompt__sign">$</span> jq 'keys' tags.json</p>
+  <div class="tag-cloud">
+    {%- for tag in site.tags %}
+    <a class="tag-chip" href="#tag-{{ tag[0] | slugify }}">{{ tag[0] }}<span class="dim">{{ tag[1] | size }}</span></a>
+    {%- endfor %}
+  </div>
+
+  <div class="json">
+    <span class="json__brace">{</span>
+    {%- for tag in site.tags %}
+    <div class="json__group" id="tag-{{ tag[0] | slugify }}">
+      <span class="fm-key">"{{ tag[0] }}"</span>: [
+      <ul>
+        {%- for post in tag[1] %}
+        <li><a href="{{ post.url | relative_url }}">"{{ post.slug }}.md"</a>{% unless forloop.last %},{% endunless %} <span class="ls-comment">// {{ post.title }}</span></li>
+        {%- endfor %}
+      </ul>
+      ]{% unless forloop.last %},{% endunless %}
+    </div>
+    {%- endfor %}
+    <span class="json__brace">}</span>
+  </div>
+</section>

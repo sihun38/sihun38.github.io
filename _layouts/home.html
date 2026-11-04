@@ -1,0 +1,49 @@
+---
+layout: default
+---
+{%- assign folders = site.data.navigation.categories[0].children -%}
+{%- assign shell_user = site.title | remove: '.' | downcase -%}
+<section class="screen">
+  <div class="neofetch">
+<pre class="ascii" aria-label="{{ site.title }}">██╗     ██╗███████╗███╗   ██╗ ██████╗ ███████╗
+██║     ██║██╔════╝████╗  ██║██╔═══██╗██╔════╝
+██║     ██║█████╗  ██╔██╗ ██║██║   ██║█████╗
+██║     ██║██╔══╝  ██║╚██╗██║██║   ██║██╔══╝
+███████╗██║███████╗██║ ╚████║╚██████╔╝███████╗
+╚══════╝╚═╝╚══════╝╚═╝  ╚═══╝ ╚═════╝ ╚══════╝</pre>
+    <ul class="neofetch__info">
+      <li><span class="accent">{{ shell_user }}</span>@<span class="accent">research</span></li>
+      <li class="dim">-----------------</li>
+      <li><span class="key">OS</span>: {{ shell_user }} os 1.0 — security research archive</li>
+      <li><span class="key">Owner</span>: {{ site.author.name }}</li>
+      <li><span class="key">Focus</span>: {{ site.subtitle }}</li>
+      <li><span class="key">Posts</span>: {{ site.posts | size }}</li>
+      <li><span class="key">Dirs</span>: {{ folders | size }}</li>
+      <li><span class="key">Tags</span>: {{ site.tags | size }}</li>
+      <li><span class="key">Shell</span>: liquid / jekyll</li>
+      <li class="swatches"><span></span><span></span><span></span><span></span><span></span><span></span></li>
+    </ul>
+  </div>
+
+  <p class="motto">break things. write it down. rebuild stronger.</p>
+  <p class="dim">아래 터미널에 <code>help</code> 를 입력하면 사용 가능한 명령을 볼 수 있어요.</p>
+
+  {{ content }}
+
+  <p class="cmd"><span class="prompt__user">{{ shell_user }}@research</span>:<span class="prompt__path">~</span><span class="prompt__sign">$</span> ls -lt ~/posts | head -n 10</p>
+  <table class="ls-table">
+    <tbody>
+      {%- for post in site.posts limit: 10 %}
+      {%- assign post_folder = post.categories | first %}
+      <tr>
+        <td class="dim">-rw-r--r--</td>
+        <td class="ls-date">{{ post.date | date: "%Y-%m-%d" }}</td>
+        <td class="ls-dir">{{ post_folder }}/</td>
+        <td><a href="{{ post.url | relative_url }}">{{ post.slug }}.md</a></td>
+        <td class="ls-comment"># {{ post.title }}</td>
+      </tr>
+      {%- endfor %}
+    </tbody>
+  </table>
+  {%- if site.posts.size == 0 %}<p class="dim">(empty directory)</p>{% endif %}
+</section>

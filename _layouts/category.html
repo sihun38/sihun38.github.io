@@ -1,0 +1,29 @@
+---
+layout: default
+---
+{%- assign shell_user = site.title | remove: '.' | downcase -%}
+{%- assign category_posts = site.categories[page.taxonomy] -%}
+<section class="screen">
+  <h1 class="screen__title"><span class="md-mark">~/posts/</span>{{ page.title }}</h1>
+  {{ content }}
+
+  <p class="cmd"><span class="prompt__user">{{ shell_user }}@research</span>:<span class="prompt__path">~/posts</span><span class="prompt__sign">$</span> ls -l "{{ page.taxonomy }}"</p>
+  <p class="dim">total {{ category_posts | size }}</p>
+  {%- if category_posts.size > 0 %}
+  <table class="ls-table">
+    <tbody>
+      {%- for post in category_posts %}
+      <tr>
+        <td class="dim">-rw-r--r--</td>
+        <td class="ls-date">{{ post.date | date: "%Y-%m-%d" }}</td>
+        <td><a href="{{ post.url | relative_url }}">{{ post.slug }}.md</a></td>
+        <td class="ls-comment"># {{ post.title }}</td>
+        <td class="ls-tags">{% for tag in post.tags %}<a href="{{ '/tags/' | relative_url }}#tag-{{ tag | slugify }}">#{{ tag }}</a> {% endfor %}</td>
+      </tr>
+      {%- endfor %}
+    </tbody>
+  </table>
+  {%- else %}
+  <p class="dim">(empty directory)</p>
+  {%- endif %}
+</section>
