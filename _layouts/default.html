@@ -159,11 +159,15 @@
         {{ content }}
       </div>
 
+      <div class="sash" id="panel-sash" role="separator" aria-orientation="horizontal" aria-label="resize terminal" title="드래그해서 크기 조절 · 더블클릭하면 원래 크기"></div>
       <section class="panel" id="panel" aria-label="terminal">
         <div class="panel__tabs">
           <span>PROBLEMS</span><span>OUTPUT</span><span class="is-active">TERMINAL</span><span>PORTS</span>
           <span class="panel__spacer"></span>
-          <button class="panel__close" type="button" data-action="toggle-panel" aria-label="close terminal">×</button>
+          <button class="panel__btn" type="button" data-action="toggle-panel-max" aria-label="maximize terminal" title="최대화 / 복원">
+            <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M3 10l5-5 5 5" fill="none" stroke="currentColor" stroke-width="1.4"/></svg>
+          </button>
+          <button class="panel__btn panel__close" type="button" data-action="toggle-panel" aria-label="close terminal">×</button>
         </div>
         <div class="terminal" id="terminal">
           <div class="terminal__chips">
@@ -185,7 +189,7 @@
   </div>
 
   <footer class="statusbar">
-    <span class="statusbar__item statusbar__item--accent">⎇ main</span>
+    <button class="statusbar__item statusbar__item--accent" type="button" id="scm-status" data-action="scm-status" title="Source Control: login / 상태 보기">⎇ main</button>
     <span class="statusbar__item">⊗ 0 ⚠ 0</span>
     <span class="statusbar__spacer"></span>
     <span class="statusbar__item" id="status-line">Ln 1, Col 1</span>
@@ -201,15 +205,17 @@
   "bio": {{ site.author.bio | jsonify }},
   "title": {{ site.title | jsonify }},
   "subtitle": {{ site.subtitle | jsonify }},
+  "repository": {{ site.repository | jsonify }},
   "home": {{ '/' | relative_url | jsonify }},
   "about": {{ '/about/' | relative_url | jsonify }},
   "tagsPage": {{ '/tags/' | relative_url | jsonify }},
   "postsPage": {{ '/categories/' | relative_url | jsonify }},
   "folders": [{% for folder in folders %}{"title": {{ folder.title | jsonify }}, "url": {{ folder.url | relative_url | jsonify }}}{% unless forloop.last %},{% endunless %}{% endfor %}],
-  "posts": [{% for post in site.posts %}{"title": {{ post.title | jsonify }}, "url": {{ post.url | relative_url | jsonify }}, "slug": {{ post.slug | jsonify }}, "date": {{ post.date | date: "%Y-%m-%d" | jsonify }}, "categories": {{ post.categories | jsonify }}, "tags": {{ post.tags | jsonify }}}{% unless forloop.last %},{% endunless %}{% endfor %}],
-  "page": {"url": {{ page.url | jsonify }}, "isPost": {% if page.collection == 'posts' %}true{% else %}false{% endif %}, "categories": {{ page.categories | jsonify }}, "taxonomy": {{ page.taxonomy | jsonify }}}
+  "posts": [{% for post in site.posts %}{"title": {{ post.title | jsonify }}, "url": {{ post.url | relative_url | jsonify }}, "slug": {{ post.slug | jsonify }}, "path": {{ post.path | jsonify }}, "date": {{ post.date | date: "%Y-%m-%d" | jsonify }}, "categories": {{ post.categories | jsonify }}, "tags": {{ post.tags | jsonify }}}{% unless forloop.last %},{% endunless %}{% endfor %}],
+  "page": {"url": {{ page.url | jsonify }}, "path": {{ page.path | jsonify }}, "isPost": {% if page.collection == 'posts' %}true{% else %}false{% endif %}, "categories": {{ page.categories | jsonify }}, "taxonomy": {{ page.taxonomy | jsonify }}}
 }
 </script>
 <script src="{{ '/assets/js/vscode.js' | relative_url }}" defer></script>
+<script src="{{ '/assets/js/vscode-scm.js' | relative_url }}" defer></script>
 </body>
 </html>

@@ -6,8 +6,11 @@
 
   var STORAGE_KEYS = {
     panelHidden: 'vsblog.panelHidden',
-    sidebarHidden: 'vsblog.sidebarHidden'
+    sidebarHidden: 'vsblog.sidebarHidden',
+    panelHeight: 'vsblog.panelHeight'
   };
+  var PANEL_MIN_HEIGHT = 90;
+  var EDITOR_MIN_HEIGHT = 120;
   var MOBILE_QUERY = '(max-width: 820px)';
   var HOST_NAME = 'research';
 
@@ -81,6 +84,7 @@
       title: post.title || '',
       url: post.url || '#',
       slug: post.slug || '',
+      path: post.path || '',
       date: post.date || '',
       categories: Array.isArray(post.categories) ? post.categories : [],
       tags: Array.isArray(post.tags) ? post.tags : []
@@ -134,6 +138,9 @@
 
   function setPanelHidden(ideNode, hidden) {
     ideNode.classList.toggle('is-panel-hidden', hidden);
+    if (hidden) {
+      ideNode.classList.remove('is-panel-max');
+    }
     writeStorage(STORAGE_KEYS.panelHidden, hidden ? '1' : '0');
   }
 
@@ -143,6 +150,85 @@
     if (!willHide && inputNode) {
       inputNode.focus();
     }
+  }
+
+  /* ---------- panel resize ---------- */
+
+  function clampPanelHeight(groupNode, height) {
+    var maxHeight = groupNode.clientHeight - EDITOR_MIN_HEIGHT;
+    return Math.round(Math.min(Math.max(height, PANEL_MIN_HEIGHT), Math.max(maxHeight, PANEL_MIN_HEIGHT)));
+  }
+
+  function applyPanelHeight(panelNode, height) {
+    panelNode.style.height = height + 'px';
+  }
+
+  function restorePanelHeight(panelNode, groupNode) {
+    var stored = Number(readStorage(STORAGE_KEYS.panelHeight));
+    if (stored > 0) {
+      applyPanelHeight(panelNode, clampPanelHeight(groupNode, stored));
+    }
+  }
+
+  function resetPanelHeight(panelNode) {
+    panelNode.style.height = '';
+    writeStorage(STORAGE_KEYS.panelHeight, '');
+  }
+
+  function initPanelResize(ideNode) {
+    var sashNode = document.getElementById('panel-sash');
+    var panelNode = document.getElementById('panel');
+    var groupNode = document.querySelector('.editor-group');
+    if (!sashNode || !panelNode || !groupNode) {
+      return;
+    }
+    restorePanelHeight(panelNode, groupNode);
+
+    var startY = 0;
+    var startHeight = 0;
+
+    function onPointerMove(event) {
+      var nextHeight = clampPanelHeight(groupNode, startHeight + (startY - event.clientY));
+      applyPanelHeight(panelNode, nextHeight);
+    }
+
+    function onPointerUp(event) {
+      sashNode.releasePointerCapture(event.pointerId);
+      sashNode.removeEventListener('pointermove', onPointerMove);
+      sashNode.removeEventListener('pointerup', onPointerUp);
+      ideNode.classList.remove('is-resizing');
+      writeStorage(STORAGE_KEYS.panelHeight, String(panelNode.offsetHeight));
+    }
+
+    sashNode.addEventListener('pointerdown', function (event) {
+      if (ideNode.classList.contains('is-panel-max')) {
+        ideNode.classList.remove('is-panel-max');
+      }
+      event.preventDefault();
+      startY = event.clientY;
+      startHeight = panelNode.offsetHeight;
+      ideNode.classList.add('is-resizing');
+      sashNode.setPointerCapture(event.pointerId);
+      sashNode.addEventListener('pointermove', onPointerMove);
+      sashNode.addEventListener('pointerup', onPointerUp);
+    });
+
+    sashNode.addEventListener('dblclick', function () {
+      resetPanelHeight(panelNode);
+    });
+
+    window.addEventListener('resize', function () {
+      if (panelNode.style.height) {
+        applyPanelHeight(panelNode, clampPanelHeight(groupNode, panelNode.offsetHeight));
+      }
+    });
+  }
+
+  function togglePanelMax(ideNode) {
+    if (ideNode.classList.contains('is-panel-hidden')) {
+      setPanelHidden(ideNode, false);
+    }
+    ideNode.classList.toggle('is-panel-max');
   }
 
   function closeMobileSidebarOnOutsideClick(ideNode, targetNode) {
@@ -166,6 +252,8 @@
         toggleSidebar(ideNode);
       } else if (action === 'toggle-panel') {
         togglePanel(ideNode, terminal.inputNode);
+      } else if (action === 'toggle-panel-max') {
+        togglePanelMax(ideNode);
       } else if (action === 'focus-find') {
         setPanelHidden(ideNode, false);
         terminal.prefill('find ');
@@ -682,15 +770,32 @@
 
       if (!handler) {
         printError(name + ': command not found. try \'help\'');
-      } else {
-        try {
-          handler(args);
-        } catch (error) {
-          console.error('[vsblog] command failed', error);
-          printError(name + ': internal error');
-        }
+        scrollToBottom();
+        return;
+      }
+      var result;
+      try {
+        result = handler(args);
+      } catch (error) {
+        console.error('[vsblog] command failed', error);
+        printError(name + ': internal error');
       }
       scrollToBottom();
+      if (result && typeof result.then === 'function') {
+        result
+          .catch(function (error) {
+            console.error('[vsblog] async command failed', error);
+            printError(name + ': ' + (error && error.message ? error.message : 'internal error'));
+          })
+          .then(scrollToBottom);
+      }
+    }
+
+    function registerCommand(name, handler, usage, description) {
+      commandTable[name] = handler;
+      if (usage) {
+        COMMAND_LIST.push([usage, description || '']);
+      }
     }
 
     /* ----- input handling ----- */
@@ -772,11 +877,29 @@
     return {
       inputNode: inputNode,
       run: run,
+      registerCommand: registerCommand,
+      printLine: printLine,
+      printError: printError,
+      createSpan: createSpan,
+      createLink: createLink,
+      scrollToBottom: scrollToBottom,
+      showPanel: function () { setPanelHidden(ideNode, false); },
       prefill: function (text) {
         inputNode.value = text;
         inputNode.focus();
       }
     };
+  }
+
+  /* other scripts (vscode-scm.js) attach through this object */
+  function exposeApi(siteData, terminal) {
+    window.vsblog = {
+      siteData: siteData,
+      terminal: terminal,
+      findPost: function (name) { return findPost(siteData, name); },
+      findFolder: function (name) { return findFolder(siteData, name); }
+    };
+    document.dispatchEvent(new CustomEvent('vsblog:ready', { detail: window.vsblog }));
   }
 
   /* ---------- boot ---------- */
@@ -803,6 +926,8 @@
 
     var terminal = createTerminal(siteData, ideNode);
     bindLayoutActions(ideNode, terminal);
+    initPanelResize(ideNode);
+    exposeApi(siteData, terminal);
   }
 
   if (document.readyState === 'loading') {
