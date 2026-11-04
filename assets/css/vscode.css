@@ -598,6 +598,27 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 .ide.is-resizing .editor { pointer-events: none; }
 .ide.is-panel-hidden .sash { display: none; }
 
+/* resize handle between explorer and editor */
+.workbench { position: relative; }
+.sash--vertical {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: calc(var(--activity-w) + var(--sidebar-w) - 3px);
+  width: 5px;
+  height: auto;
+  margin: 0;
+  z-index: 6;
+  cursor: ew-resize;
+}
+.sash--vertical::after { top: 0; bottom: 0; left: 2px; right: auto; width: 1px; height: auto; }
+.sash--vertical:hover::after,
+.ide.is-resizing-x .sash--vertical::after { background: var(--accent-deep); width: 3px; left: 1px; height: auto; top: 0; }
+.ide.is-sidebar-hidden .sash--vertical { left: calc(var(--activity-w) - 2px); }
+.ide.is-resizing-x { cursor: ew-resize; user-select: none; }
+.ide.is-resizing-x .editor,
+.ide.is-resizing-x .sidebar { pointer-events: none; }
+
 /* maximized terminal */
 .ide.is-panel-max .tabs,
 .ide.is-panel-max .breadcrumb,
@@ -684,6 +705,7 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
   .workbench,
   .ide.is-sidebar-hidden .workbench { grid-template-columns: minmax(0, 1fr); }
   .activitybar { display: none; }
+  .sash--vertical { display: none; }
 
   .sidebar {
     position: fixed;

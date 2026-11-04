@@ -10,7 +10,6 @@
   var API_ROOT = 'https://api.github.com';
   var API_VERSION = '2022-11-28';
   var SESSION_KEY = 'vsblog.githubSession';
-  var TOKEN_HELP_URL = 'https://github.com/settings/personal-access-tokens/new';
   var SLUG_PATTERN = /^[a-z0-9][a-z0-9-]*$/;
   var PAGES_DELAY_NOTE = 'GitHub Pages 반영까지 보통 1~2분 걸려.';
 
@@ -258,7 +257,9 @@
       field.autocomplete = 'off';
       field.spellcheck = false;
 
-      box.appendChild(title);
+      if (options.title) {
+        box.appendChild(title);
+      }
       box.appendChild(field);
       if (options.hintNodes) {
         var hint = document.createElement('p');
@@ -496,14 +497,6 @@
     return false;
   }
 
-  function createTokenHint(terminal) {
-    return [
-      document.createTextNode('fine-grained token · 이 레포만 · Contents: Read and write · 짧은 만료일 권장 → '),
-      terminal.createLink('토큰 만들기', TOKEN_HELP_URL),
-      document.createTextNode(' · 토큰은 이 탭의 sessionStorage에만 저장되고, 탭을 닫으면 지워져.')
-    ];
-  }
-
   function commandLogin(context) {
     var terminal = context.terminal;
     if (state.isOwner) {
@@ -511,10 +504,8 @@
       return null;
     }
     return openQuickInput({
-      title: 'GitHub Personal Access Token 입력 (' + context.repo.owner + '/' + context.repo.name + ')',
       placeholder: 'github_pat_...',
-      password: true,
-      hintNodes: createTokenHint(terminal)
+      password: true
     }).then(function (token) {
       if (!token || !token.trim()) {
         terminal.printLine(terminal.createSpan('login cancelled', 'term-dim'));

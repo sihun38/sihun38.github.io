@@ -7,9 +7,17 @@
   var STORAGE_KEYS = {
     panelHidden: 'vsblog.panelHidden',
     sidebarHidden: 'vsblog.sidebarHidden',
-    panelHeight: 'vsblog.panelHeight'
+    panelHeight: 'vsblog.panelHeight',
+    sidebarWidth: 'vsblog.sidebarWidth'
   };
   var PANEL_MIN_HEIGHT = 90;
+  var SIDEBAR_MIN_WIDTH = 160;
+  var SIDEBAR_COLLAPSE_WIDTH = 110;
+  var COMPLETION_KIND = {
+    dir: ['ls', 'll', 'dir', 'cd', 'tree', 'new', 'touch'],
+    file: ['cat', 'open', 'vim', 'code', 'edit', 'rm'],
+    tag: ['tags']
+  };
   var EDITOR_MIN_HEIGHT = 120;
   var MOBILE_QUERY = '(max-width: 820px)';
   var HOST_NAME = 'research';
@@ -220,6 +228,85 @@
     window.addEventListener('resize', function () {
       if (panelNode.style.height) {
         applyPanelHeight(panelNode, clampPanelHeight(groupNode, panelNode.offsetHeight));
+      }
+    });
+  }
+
+  /* ---------- sidebar (explorer) resize ---------- */
+
+  function clampSidebarWidth(width) {
+    var maxWidth = Math.max(SIDEBAR_MIN_WIDTH, Math.round(window.innerWidth * 0.5));
+    return Math.round(Math.min(Math.max(width, SIDEBAR_MIN_WIDTH), maxWidth));
+  }
+
+  function applySidebarWidth(ideNode, width) {
+    ideNode.style.setProperty('--sidebar-w', width + 'px');
+  }
+
+  function restoreSidebarWidth(ideNode) {
+    var stored = Number(readStorage(STORAGE_KEYS.sidebarWidth));
+    if (stored > 0) {
+      applySidebarWidth(ideNode, clampSidebarWidth(stored));
+    }
+  }
+
+  function setSidebarHidden(ideNode, hidden) {
+    ideNode.classList.toggle('is-sidebar-hidden', hidden);
+    writeStorage(STORAGE_KEYS.sidebarHidden, hidden ? '1' : '0');
+  }
+
+  function initSidebarResize(ideNode) {
+    var sashNode = document.getElementById('sidebar-sash');
+    var sidebarNode = document.getElementById('sidebar');
+    if (!sashNode || !sidebarNode) {
+      return;
+    }
+    restoreSidebarWidth(ideNode);
+
+    var startX = 0;
+    var startWidth = 0;
+
+    function onPointerMove(event) {
+      var rawWidth = startWidth + (event.clientX - startX);
+      if (rawWidth < SIDEBAR_COLLAPSE_WIDTH) {
+        setSidebarHidden(ideNode, true);
+        return;
+      }
+      if (ideNode.classList.contains('is-sidebar-hidden')) {
+        setSidebarHidden(ideNode, false);
+      }
+      applySidebarWidth(ideNode, clampSidebarWidth(rawWidth));
+    }
+
+    function onPointerUp(event) {
+      sashNode.releasePointerCapture(event.pointerId);
+      sashNode.removeEventListener('pointermove', onPointerMove);
+      sashNode.removeEventListener('pointerup', onPointerUp);
+      ideNode.classList.remove('is-resizing-x');
+      if (!ideNode.classList.contains('is-sidebar-hidden')) {
+        writeStorage(STORAGE_KEYS.sidebarWidth, String(sidebarNode.offsetWidth));
+      }
+    }
+
+    sashNode.addEventListener('pointerdown', function (event) {
+      event.preventDefault();
+      startX = event.clientX;
+      startWidth = ideNode.classList.contains('is-sidebar-hidden') ? 0 : sidebarNode.offsetWidth;
+      ideNode.classList.add('is-resizing-x');
+      sashNode.setPointerCapture(event.pointerId);
+      sashNode.addEventListener('pointermove', onPointerMove);
+      sashNode.addEventListener('pointerup', onPointerUp);
+    });
+
+    sashNode.addEventListener('dblclick', function () {
+      ideNode.style.removeProperty('--sidebar-w');
+      writeStorage(STORAGE_KEYS.sidebarWidth, '');
+      setSidebarHidden(ideNode, false);
+    });
+
+    window.addEventListener('resize', function () {
+      if (ideNode.style.getPropertyValue('--sidebar-w')) {
+        applySidebarWidth(ideNode, clampSidebarWidth(sidebarNode.offsetWidth));
       }
     });
   }
@@ -800,30 +887,111 @@
 
     /* ----- input handling ----- */
 
-    function getCompletionCandidates(isFirstWord) {
-      if (isFirstWord) {
-        return Object.keys(commandTable);
+    var completionState = null;
+
+    function startsWithIgnoreCase(text, prefix) {
+      return text.toLowerCase().indexOf(prefix.toLowerCase()) === 0;
+    }
+
+    function uniqueList(items) {
+      return items.filter(function (item, index) { return items.indexOf(item) === index; });
+    }
+
+    function getFolderCandidates() {
+      return siteData.folders.map(function (folder) { return folder.slug + '/'; });
+    }
+
+    function getFileCandidates(word) {
+      var slashIndex = word.lastIndexOf('/');
+      if (slashIndex !== -1) {
+        var folderPart = word.slice(0, slashIndex);
+        var folder = findFolder(siteData, folderPart);
+        if (!folder) {
+          return [];
+        }
+        return getPostsInFolder(siteData, folder).map(function (post) {
+          return folderPart + '/' + post.slug + '.md';
+        });
       }
-      var folderNames = siteData.folders.map(function (folder) { return folder.slug + '/'; });
-      var postNames = siteData.posts.map(function (post) { return post.slug + '.md'; });
-      return folderNames.concat(postNames, ['about.txt', 'tags.json']);
+      var here = currentFolder ? getPostsInFolder(siteData, currentFolder) : [];
+      var hereNames = here.map(function (post) { return post.slug + '.md'; });
+      var allNames = siteData.posts.map(function (post) { return post.slug + '.md'; });
+      return uniqueList(hereNames.concat(allNames, ['about.txt', 'tags.json'], getFolderCandidates()));
+    }
+
+    function getTagCandidates() {
+      var tags = [];
+      siteData.posts.forEach(function (post) { tags = tags.concat(post.tags); });
+      return uniqueList(tags).sort();
+    }
+
+    function getArgumentCandidates(commandName, argIndex, word) {
+      if (COMPLETION_KIND.dir.indexOf(commandName) !== -1) {
+        return argIndex === 1 ? getFolderCandidates() : [];
+      }
+      if (COMPLETION_KIND.file.indexOf(commandName) !== -1) {
+        return getFileCandidates(word);
+      }
+      if (COMPLETION_KIND.tag.indexOf(commandName) !== -1) {
+        return getTagCandidates();
+      }
+      return getFileCandidates(word);
+    }
+
+    function getCommonPrefix(items) {
+      var prefix = items[0];
+      items.forEach(function (item) {
+        while (!startsWithIgnoreCase(item, prefix)) {
+          prefix = prefix.slice(0, -1);
+        }
+      });
+      return prefix;
+    }
+
+    function replaceLastWord(words, replacement, addSpace) {
+      var nextWords = words.slice(0, -1).concat(replacement);
+      inputNode.value = nextWords.join(' ') + (addSpace ? ' ' : '');
+    }
+
+    function cycleCompletion() {
+      completionState.index = (completionState.index + 1) % completionState.candidates.length;
+      replaceLastWord(completionState.words, completionState.candidates[completionState.index], false);
+      completionState.lastValue = inputNode.value;
     }
 
     function completeInput() {
-      var value = inputNode.value;
-      var words = value.split(' ');
-      var lastWord = words[words.length - 1];
-      var candidates = getCompletionCandidates(words.length === 1).filter(function (candidate) {
-        return candidate.indexOf(lastWord) === 0;
-      });
-      if (candidates.length === 1) {
-        words[words.length - 1] = candidates[0] + (words.length === 1 ? ' ' : '');
-        inputNode.value = words.join(' ');
-      } else if (candidates.length > 1) {
-        printEcho(value);
-        printLine(createSpan(candidates.join('  '), 'term-dim'));
-        scrollToBottom();
+      if (completionState && inputNode.value === completionState.lastValue) {
+        cycleCompletion();
+        return;
       }
+      completionState = null;
+
+      var words = inputNode.value.split(' ');
+      var lastWord = words[words.length - 1];
+      var isFirstWord = words.length === 1;
+      var pool = isFirstWord
+        ? Object.keys(commandTable)
+        : getArgumentCandidates(words[0].toLowerCase(), words.length - 1, lastWord);
+      var candidates = pool.filter(function (candidate) { return startsWithIgnoreCase(candidate, lastWord); });
+
+      if (candidates.length === 0) {
+        return;
+      }
+      if (candidates.length === 1) {
+        var only = candidates[0];
+        replaceLastWord(words, only, only.charAt(only.length - 1) !== '/');
+        return;
+      }
+      var prefix = getCommonPrefix(candidates);
+      if (prefix.length > lastWord.length) {
+        replaceLastWord(words, prefix, false);
+        return;
+      }
+      printEcho(inputNode.value);
+      printLine(createSpan(candidates.join('  '), 'term-dim'));
+      scrollToBottom();
+      completionState = { words: words, candidates: candidates, index: -1, lastValue: null };
+      cycleCompletion();
     }
 
     function moveHistory(step) {
@@ -927,6 +1095,7 @@
     var terminal = createTerminal(siteData, ideNode);
     bindLayoutActions(ideNode, terminal);
     initPanelResize(ideNode);
+    initSidebarResize(ideNode);
     exposeApi(siteData, terminal);
   }
 

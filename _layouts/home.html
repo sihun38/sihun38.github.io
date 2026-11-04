@@ -30,20 +30,4 @@ layout: default
 
   {{ content }}
 
-  <p class="cmd"><span class="prompt__user">{{ shell_user }}@research</span>:<span class="prompt__path">~</span><span class="prompt__sign">$</span> ls -lt ~/posts | head -n 10</p>
-  <table class="ls-table">
-    <tbody>
-      {%- for post in site.posts limit: 10 %}
-      {%- assign post_folder = post.categories | first %}
-      <tr>
-        <td class="dim">-rw-r--r--</td>
-        <td class="ls-date">{{ post.date | date: "%Y-%m-%d" }}</td>
-        <td class="ls-dir">{{ post_folder }}/</td>
-        <td><a href="{{ post.url | relative_url }}">{{ post.slug }}.md</a></td>
-        <td class="ls-comment"># {{ post.title }}</td>
-      </tr>
-      {%- endfor %}
-    </tbody>
-  </table>
-  {%- if site.posts.size == 0 %}<p class="dim">(empty directory)</p>{% endif %}
 </section>
