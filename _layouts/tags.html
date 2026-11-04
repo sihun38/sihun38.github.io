@@ -1,12 +1,11 @@
 ---
 layout: default
 ---
-{%- assign shell_user = site.title | remove: '.' | downcase -%}
 <section class="screen">
   <h1 class="screen__title"><span class="md-mark">~/</span>tags.json</h1>
   {{ content }}
 
-  <p class="cmd"><span class="prompt__user">{{ shell_user }}@research</span>:<span class="prompt__path">~</span><span class="prompt__sign">$</span> jq 'keys' tags.json</p>
+  <p class="cmd"><span class="prompt__user"><span class="prompt-user-name">user</span>@research</span>:<span class="prompt__path">~</span><span class="prompt__sign">$</span> jq 'keys' tags.json</p>
   <div class="tag-cloud">
     {%- for tag in site.tags %}
     <a class="tag-chip" href="#tag-{{ tag[0] | slugify }}">{{ tag[0] }}<span class="dim">{{ tag[1] | size }}</span></a>

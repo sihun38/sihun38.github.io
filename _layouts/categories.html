@@ -1,13 +1,12 @@
 ---
 layout: default
 ---
-{%- assign shell_user = site.title | remove: '.' | downcase -%}
 {%- assign folders = site.data.navigation.categories[0].children -%}
 <section class="screen">
   <h1 class="screen__title"><span class="md-mark">~/</span>posts</h1>
   {{ content }}
 
-  <p class="cmd"><span class="prompt__user">{{ shell_user }}@research</span>:<span class="prompt__path">~</span><span class="prompt__sign">$</span> tree ~/posts</p>
+  <p class="cmd"><span class="prompt__user"><span class="prompt-user-name">user</span>@research</span>:<span class="prompt__path">~</span><span class="prompt__sign">$</span> tree ~/posts</p>
   <ul class="tree-out">
     <li class="tree-out__root">~/posts</li>
     {%- for folder in folders %}

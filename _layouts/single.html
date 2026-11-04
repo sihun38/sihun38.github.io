@@ -2,19 +2,6 @@
 layout: default
 ---
 <article class="doc">
-  {%- if page.collection == 'posts' %}
-  <div class="frontmatter">
-    <span class="fm-line fm-dash">---</span>
-    <span class="fm-line"><span class="fm-key">title</span>: <span class="fm-str">"{{ page.title }}"</span></span>
-    <span class="fm-line"><span class="fm-key">date</span>: <span class="fm-num">{{ page.date | date: "%Y-%m-%d %H:%M" }}</span></span>
-    <span class="fm-line"><span class="fm-key">categories</span>: [{% for category in page.categories %}{% assign category_url = '/categories/' %}{% for folder in site.data.navigation.categories[0].children %}{% if folder.title == category %}{% assign category_url = folder.url %}{% endif %}{% endfor %}<a class="fm-link" href="{{ category_url | relative_url }}">{{ category }}</a>{% unless forloop.last %}, {% endunless %}{% endfor %}]</span>
-    {%- if page.tags.size > 0 %}
-    <span class="fm-line"><span class="fm-key">tags</span>: [{% for tag in page.tags %}<a class="fm-tag" href="{{ '/tags/' | relative_url }}#tag-{{ tag | slugify }}">{{ tag }}</a>{% unless forloop.last %}, {% endunless %}{% endfor %}]</span>
-    {%- endif %}
-    <span class="fm-line fm-dash">---</span>
-  </div>
-  {%- endif %}
-
   <h1 class="doc__title"><span class="md-mark">#</span> {{ page.title }}</h1>
 
   <div class="md" id="md">

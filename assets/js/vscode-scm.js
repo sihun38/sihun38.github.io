@@ -89,14 +89,6 @@
     return date.getFullYear() + '-' + padNumber(date.getMonth() + 1) + '-' + padNumber(date.getDate());
   }
 
-  function formatFrontMatterDate(date) {
-    var offsetMinutes = -date.getTimezoneOffset();
-    var sign = offsetMinutes >= 0 ? '+' : '-';
-    var absolute = Math.abs(offsetMinutes);
-    return formatDateOnly(date) + ' ' + padNumber(date.getHours()) + ':' + padNumber(date.getMinutes()) + ':00 ' +
-      sign + padNumber(Math.floor(absolute / 60)) + padNumber(absolute % 60);
-  }
-
   function getFileName(path) {
     return path.split('/').pop();
   }
@@ -524,6 +516,7 @@
         state.isOwner = true;
         writeSession({ token: trimmed, login: result.login, branch: result.branch });
         updateStatusBadge();
+        terminal.setPromptUser(context.siteData.user);
         terminal.printLine([terminal.createSpan('logged in as ' + result.login, 'term-ok'), terminal.createSpan('  (branch: ' + result.branch + ')', 'term-dim')]);
         terminal.printLine(terminal.createSpan('new <dir> <slug> · edit [file] · rm <file> · git log 사용 가능', 'term-dim'));
       });
@@ -536,6 +529,7 @@
     state.isOwner = false;
     clearSession();
     updateStatusBadge();
+    context.terminal.setPromptUser(null);
     context.terminal.printLine(context.terminal.createSpan('logged out. 토큰을 이 탭에서 지웠어.', 'term-dim'));
   }
 
@@ -563,7 +557,6 @@
     var template = [
       '---',
       'title: "제목을 입력하세요"',
-      'date: ' + formatFrontMatterDate(now),
       'categories: [' + folder.title + ']',
       'tags: []',
       '---',
@@ -716,6 +709,9 @@
 
     restoreSession();
     updateStatusBadge();
+    if (state.isOwner) {
+      api.terminal.setPromptUser(api.siteData.user);
+    }
 
     var register = api.terminal.registerCommand;
     register('login', function () { return commandLogin(context); }, 'login', '(소유자) GitHub 토큰으로 편집 권한 켜기');

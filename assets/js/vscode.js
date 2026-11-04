@@ -21,6 +21,7 @@
   var EDITOR_MIN_HEIGHT = 120;
   var MOBILE_QUERY = '(max-width: 820px)';
   var HOST_NAME = 'research';
+  var GUEST_USER = 'user';
 
   var COMMAND_LIST = [
     ['help', '사용 가능한 명령 목록'],
@@ -548,6 +549,7 @@
 
     var history = [];
     var historyIndex = 0;
+    var promptUser = GUEST_USER;
     var currentFolder = getCurrentFolder(siteData);
     var currentPath = currentFolder ? '~/posts/' + currentFolder.slug : '~';
 
@@ -574,9 +576,16 @@
       printLine(createSpan(message, 'term-err'));
     }
 
+    function setPromptUser(name) {
+      promptUser = name || GUEST_USER;
+      document.querySelectorAll('.prompt-user-name').forEach(function (node) {
+        node.textContent = promptUser;
+      });
+    }
+
     function printEcho(rawCommand) {
       printLine([
-        createSpan(siteData.user + '@' + HOST_NAME, 'prompt__user'),
+        createSpan(promptUser + '@' + HOST_NAME, 'prompt__user'),
         ':',
         createSpan(currentPath, 'prompt__path'),
         createSpan('$', 'prompt__sign'),
@@ -638,7 +647,6 @@
       }
       posts.forEach(function (post) {
         printLine([
-          createSpan(post.date + '  ', 'term-dim'),
           createLink(post.slug + '.md', post.url),
           createSpan('  # ' + post.title, 'term-dim')
         ]);
@@ -782,21 +790,16 @@
     }
 
     function commandWhoami() {
-      printLine(createSpan(siteData.user, 'term-ok'));
-      if (siteData.subtitle) {
+      printLine(createSpan(promptUser, 'term-ok'));
+      if (promptUser !== GUEST_USER && siteData.subtitle) {
         printLine(createSpan(siteData.subtitle, 'term-dim'));
       }
     }
 
     function commandNeofetch() {
       var info = [
-        ['OS', siteData.user + ' os 1.0 — security research archive'],
-        ['Focus', siteData.subtitle],
         ['Posts', String(siteData.posts.length)],
-        ['Dirs', String(siteData.folders.length)],
-        ['Tags', String(Object.keys(collectTagCounts()).length)],
-        ['Shell', 'liquid / jekyll'],
-        ['Uptime', 'since ' + (siteData.posts.length ? siteData.posts[siteData.posts.length - 1].date : '-')]
+        ['Dirs', String(siteData.folders.length)]
       ];
       printLine([createSpan(siteData.user, 'term-ok'), '@', createSpan(HOST_NAME, 'term-ok')]);
       printLine(createSpan('-----------------', 'term-dim'));
@@ -812,7 +815,7 @@
     }
 
     function commandSudo() {
-      printError(siteData.user + ' is not in the sudoers file. This incident will be reported.');
+      printError(promptUser + ' is not in the sudoers file. This incident will be reported.');
     }
 
     var commandTable = {
@@ -831,7 +834,7 @@
       tags: commandTags,
       whoami: commandWhoami,
       neofetch: commandNeofetch,
-      pwd: function () { printLine(currentPath.replace('~', '/home/' + siteData.user)); },
+      pwd: function () { printLine(currentPath.replace('~', '/home/' + promptUser)); },
       echo: function (args) { printLine(args.join(' ')); },
       date: function () { printLine(new Date().toString()); },
       history: commandHistory,
@@ -1040,7 +1043,6 @@
     }
 
     printLine(createSpan(siteData.user + ' os 1.0 — security research archive', 'term-ok'));
-    printLine(createSpan('\'help\' 를 입력하면 사용 가능한 명령을 볼 수 있어요. Tab 자동완성, ↑↓ 기록 지원.', 'term-dim'));
 
     return {
       inputNode: inputNode,
@@ -1051,6 +1053,7 @@
       createSpan: createSpan,
       createLink: createLink,
       scrollToBottom: scrollToBottom,
+      setPromptUser: setPromptUser,
       showPanel: function () { setPanelHidden(ideNode, false); },
       prefill: function (text) {
         inputNode.value = text;
