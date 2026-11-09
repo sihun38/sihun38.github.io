@@ -13,6 +13,9 @@
   var PANEL_MIN_HEIGHT = 90;
   var SIDEBAR_MIN_WIDTH = 160;
   var SIDEBAR_COLLAPSE_WIDTH = 110;
+  /* everything after these commands is one argument, so names may contain spaces */
+  var SINGLE_TARGET_COMMANDS = ['ls', 'll', 'dir', 'cd', 'cat', 'open', 'vim', 'code', 'edit', 'rm', 'tags'];
+  var DIR_THEN_NAME_COMMANDS = ['new', 'touch'];
   var COMPLETION_KIND = {
     dir: ['ls', 'll', 'dir', 'cd', 'tree', 'new', 'touch'],
     file: ['cat', 'open', 'vim', 'code', 'edit', 'rm'],
@@ -452,6 +455,12 @@
     window.setTimeout(function () { button.textContent = 'copy'; }, 1400);
   }
 
+  function enhanceMarkdown(markdownNode) {
+    addHeadingPrefixes(markdownNode);
+    buildOutline(markdownNode);
+    enhanceCodeBlocks(markdownNode);
+  }
+
   function trackLineNumber(editorNode, statusNode) {
     var numbered = editorNode.querySelectorAll('.frontmatter > .fm-line, .doc__title, .md > *');
     if (!statusNode || numbered.length === 0) {
@@ -855,7 +864,7 @@
 
       var words = trimmed.split(/\s+/);
       var name = words[0].toLowerCase();
-      var args = words.slice(1).map(function (arg) { return arg.replace(/^["']|["']$/g, ''); });
+      var args = normalizeArgs(name, words.slice(1));
       var handler = commandTable[name];
 
       if (!handler) {
@@ -879,6 +888,26 @@
           })
           .then(scrollToBottom);
       }
+    }
+
+    function stripQuotes(text) {
+      return text.replace(/^(["'])([\s\S]*)\1$/, '$2');
+    }
+
+    function normalizeArgs(name, rawArgs) {
+      if (rawArgs.length === 0) {
+        return [];
+      }
+      if (SINGLE_TARGET_COMMANDS.indexOf(name) !== -1) {
+        return [stripQuotes(rawArgs.join(' '))];
+      }
+      if (DIR_THEN_NAME_COMMANDS.indexOf(name) !== -1) {
+        var flags = rawArgs.filter(function (arg) { return arg.indexOf('--') === 0; });
+        var plain = rawArgs.filter(function (arg) { return arg.indexOf('--') !== 0; });
+        var rebuilt = plain.length > 1 ? [plain[0], stripQuotes(plain.slice(1).join(' '))] : plain;
+        return rebuilt.concat(flags);
+      }
+      return rawArgs.map(stripQuotes);
     }
 
     function registerCommand(name, handler, usage, description) {
@@ -928,17 +957,52 @@
       return uniqueList(tags).sort();
     }
 
-    function getArgumentCandidates(commandName, argIndex, word) {
-      if (COMPLETION_KIND.dir.indexOf(commandName) !== -1) {
-        return argIndex === 1 ? getFolderCandidates() : [];
+    function getCandidatesForKind(kind, word) {
+      if (kind === 'dir') {
+        return getFolderCandidates();
       }
-      if (COMPLETION_KIND.file.indexOf(commandName) !== -1) {
-        return getFileCandidates(word);
-      }
-      if (COMPLETION_KIND.tag.indexOf(commandName) !== -1) {
+      if (kind === 'tag') {
         return getTagCandidates();
       }
       return getFileCandidates(word);
+    }
+
+    function getCompletionKind(commandName) {
+      var kinds = Object.keys(COMPLETION_KIND);
+      for (var i = 0; i < kinds.length; i += 1) {
+        if (COMPLETION_KIND[kinds[i]].indexOf(commandName) !== -1) {
+          return kinds[i];
+        }
+      }
+      return null;
+    }
+
+    /* which part of the input is being completed: { head, word, candidates } */
+    function getCompletionTarget(raw) {
+      var firstWord = /^(\s*)(\S*)$/.exec(raw);
+      if (firstWord) {
+        return { head: firstWord[1], word: firstWord[2], candidates: Object.keys(commandTable), isCommand: true };
+      }
+      var commandMatch = /^(\s*(\S+)\s+)([\s\S]*)$/.exec(raw);
+      if (!commandMatch) {
+        return null;
+      }
+      var head = commandMatch[1];
+      var commandName = commandMatch[2].toLowerCase();
+      var rest = commandMatch[3];
+
+      if (DIR_THEN_NAME_COMMANDS.indexOf(commandName) !== -1) {
+        if (/\s/.test(rest)) {
+          return null;
+        }
+        return { head: head, word: rest, candidates: getFolderCandidates() };
+      }
+      var kind = getCompletionKind(commandName);
+      if (!kind) {
+        return null;
+      }
+      var word = rest.replace(/^["']/, '');
+      return { head: head, word: word, candidates: getCandidatesForKind(kind, word) };
     }
 
     function getCommonPrefix(items) {
@@ -951,14 +1015,13 @@
       return prefix;
     }
 
-    function replaceLastWord(words, replacement, addSpace) {
-      var nextWords = words.slice(0, -1).concat(replacement);
-      inputNode.value = nextWords.join(' ') + (addSpace ? ' ' : '');
+    function applyCompletion(target, text, addSpace) {
+      inputNode.value = target.head + text + (addSpace ? ' ' : '');
     }
 
     function cycleCompletion() {
       completionState.index = (completionState.index + 1) % completionState.candidates.length;
-      replaceLastWord(completionState.words, completionState.candidates[completionState.index], false);
+      applyCompletion(completionState.target, completionState.candidates[completionState.index], false);
       completionState.lastValue = inputNode.value;
     }
 
@@ -969,31 +1032,30 @@
       }
       completionState = null;
 
-      var words = inputNode.value.split(' ');
-      var lastWord = words[words.length - 1];
-      var isFirstWord = words.length === 1;
-      var pool = isFirstWord
-        ? Object.keys(commandTable)
-        : getArgumentCandidates(words[0].toLowerCase(), words.length - 1, lastWord);
-      var candidates = pool.filter(function (candidate) { return startsWithIgnoreCase(candidate, lastWord); });
-
+      var target = getCompletionTarget(inputNode.value);
+      if (!target) {
+        return;
+      }
+      var candidates = target.candidates.filter(function (candidate) {
+        return startsWithIgnoreCase(candidate, target.word);
+      });
       if (candidates.length === 0) {
         return;
       }
       if (candidates.length === 1) {
         var only = candidates[0];
-        replaceLastWord(words, only, only.charAt(only.length - 1) !== '/');
+        applyCompletion(target, only, target.isCommand || false);
         return;
       }
       var prefix = getCommonPrefix(candidates);
-      if (prefix.length > lastWord.length) {
-        replaceLastWord(words, prefix, false);
+      if (prefix.length > target.word.length) {
+        applyCompletion(target, prefix, false);
         return;
       }
       printEcho(inputNode.value);
       printLine(createSpan(candidates.join('  '), 'term-dim'));
       scrollToBottom();
-      completionState = { words: words, candidates: candidates, index: -1, lastValue: null };
+      completionState = { target: target, candidates: candidates, index: -1, lastValue: null };
       cycleCompletion();
     }
 
@@ -1068,7 +1130,8 @@
       siteData: siteData,
       terminal: terminal,
       findPost: function (name) { return findPost(siteData, name); },
-      findFolder: function (name) { return findFolder(siteData, name); }
+      findFolder: function (name) { return findFolder(siteData, name); },
+      enhanceMarkdown: enhanceMarkdown
     };
     document.dispatchEvent(new CustomEvent('vsblog:ready', { detail: window.vsblog }));
   }
@@ -1085,9 +1148,7 @@
 
     var markdownNode = document.getElementById('md');
     if (markdownNode) {
-      addHeadingPrefixes(markdownNode);
-      buildOutline(markdownNode);
-      enhanceCodeBlocks(markdownNode);
+      enhanceMarkdown(markdownNode);
     }
 
     var editorNode = document.getElementById('editor');

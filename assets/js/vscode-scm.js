@@ -10,7 +10,9 @@
   var API_ROOT = 'https://api.github.com';
   var API_VERSION = '2022-11-28';
   var SESSION_KEY = 'vsblog.githubSession';
-  var SLUG_PATTERN = /^[a-z0-9][a-z0-9-]*$/;
+  /* letters (incl. Korean), digits, spaces, - and _ ; must start with a letter or digit */
+  var SLUG_PATTERN = /^[\p{L}\p{N}][\p{L}\p{N} _-]*$/u;
+  var SLUG_MAX_LENGTH = 80;
   var PAGES_DELAY_NOTE = 'GitHub Pages 반영까지 보통 1~2분 걸려.';
 
   var state = {
@@ -95,6 +97,14 @@
     var absolute = Math.abs(offsetMinutes);
     return formatDateOnly(date) + ' ' + padNumber(date.getHours()) + ':' + padNumber(date.getMinutes()) + ':00 ' +
       sign + padNumber(Math.floor(absolute / 60)) + padNumber(absolute % 60);
+  }
+
+  function normalizeSlug(text) {
+    return String(text || '')
+      .normalize('NFC')
+      .replace(/\.md$/i, '')
+      .trim()
+      .replace(/\s+/g, ' ');
   }
 
   function getFileName(path) {
@@ -336,6 +346,83 @@
     return window.confirm('이 글은 블로그에 제대로 안 보일 수 있어.\n\n- ' + problems.join('\n- ') + '\n\n그래도 커밋할까?');
   }
 
+  /* ---------- secret post helpers ---------- */
+
+  var MIN_SECRET_PASSWORD = 8;
+
+  function getSecretApi() {
+    return window.vsblogSecret && window.vsblogSecret.isCryptoAvailable() ? window.vsblogSecret : null;
+  }
+
+  function askNewSecretPassword() {
+    return openQuickInput({ title: '비밀글 비밀번호 설정 (' + MIN_SECRET_PASSWORD + '자 이상, 12자 이상 권장)', password: true })
+      .then(function (first) {
+        if (first === null) {
+          return null;
+        }
+        if (first.length < MIN_SECRET_PASSWORD) {
+          throw new Error('비밀번호는 ' + MIN_SECRET_PASSWORD + '자 이상이어야 해.');
+        }
+        return openQuickInput({ title: '비밀번호 한 번 더 입력', password: true }).then(function (second) {
+          if (second === null) {
+            return null;
+          }
+          if (second !== first) {
+            throw new Error('두 비밀번호가 달라.');
+          }
+          return first;
+        });
+      });
+  }
+
+  /* returns the text to commit, or null when the user cancels */
+  function prepareCommitContent(current, content) {
+    var secretApi = getSecretApi();
+    var wantsSecret = window.vsblogSecret ? window.vsblogSecret.isSecretRequested(content) : false;
+
+    if (!wantsSecret) {
+      if (current.secretPassword && !window.confirm('secret: true 가 빠졌어. 이대로 커밋하면 이 글이 암호화 없이 공개돼. 계속할까?')) {
+        return Promise.resolve(null);
+      }
+      return Promise.resolve({ text: content, password: null });
+    }
+    if (!secretApi) {
+      return Promise.reject(new Error('이 브라우저에서는 암호화를 할 수 없어서 비밀글을 저장할 수 없어.'));
+    }
+    var passwordPromise = current.secretPassword ? Promise.resolve(current.secretPassword) : askNewSecretPassword();
+    return passwordPromise.then(function (password) {
+      if (!password) {
+        return null;
+      }
+      return secretApi.buildEncryptedFile(content, password).then(function (encrypted) {
+        return { text: encrypted, password: password };
+      });
+    });
+  }
+
+  function unlockFileForEditing(context, file) {
+    var secretApi = getSecretApi();
+    var cipher = window.vsblogSecret ? window.vsblogSecret.readCipherFromFile(file.content) : null;
+    if (!cipher) {
+      return Promise.resolve(file);
+    }
+    if (!secretApi) {
+      return Promise.reject(new Error('이 브라우저에서는 비밀글을 복호화할 수 없어.'));
+    }
+    var remembered = secretApi.getUnlockedPassword(file.path);
+    var passwordPromise = remembered
+      ? Promise.resolve(remembered)
+      : openQuickInput({ title: '비밀글 비밀번호 (' + getFileName(file.path) + ')', password: true });
+    return passwordPromise.then(function (password) {
+      if (!password) {
+        return null;
+      }
+      return secretApi.decryptText(cipher, password).then(function (plaintext) {
+        return { path: file.path, sha: file.sha, content: plaintext, secretPassword: password };
+      });
+    });
+  }
+
   /* ---------- file editor overlay ---------- */
 
   function updateGutter(gutterNode, text) {
@@ -364,7 +451,7 @@
 
   function openFileEditor(context, file) {
     var terminal = context.terminal;
-    var current = { path: file.path, sha: file.sha, savedContent: file.content };
+    var current = { path: file.path, sha: file.sha, savedContent: file.content, secretPassword: file.secretPassword || null };
 
     var root = document.createElement('div');
     root.className = 'file-editor';
@@ -460,18 +547,28 @@
       }
       setBusy(true);
       saveButton.disabled = true;
-      putFile(context.repo, current.path, content, current.sha, message)
-        .then(function (result) {
-          current.sha = result.content.sha;
-          current.savedContent = content;
-          refreshDirtyMark();
-          var shortSha = String(result.commit.sha).slice(0, 7);
-          terminal.printLine([
-            terminal.createSpan('[' + state.branch + ' ' + shortSha + '] ', 'term-ok'),
-            message
-          ]);
-          terminal.printLine(terminal.createSpan(' 1 file changed: ' + current.path + ' · ' + PAGES_DELAY_NOTE, 'term-dim'));
-          messageField.value = 'post: update ' + getFileName(current.path);
+      prepareCommitContent(current, content)
+        .then(function (prepared) {
+          if (!prepared) {
+            terminal.printLine(terminal.createSpan('commit cancelled', 'term-dim'));
+            return null;
+          }
+          return putFile(context.repo, current.path, prepared.text, current.sha, message).then(function (result) {
+            current.sha = result.content.sha;
+            current.savedContent = content;
+            current.secretPassword = prepared.password;
+            refreshDirtyMark();
+            var shortSha = String(result.commit.sha).slice(0, 7);
+            terminal.printLine([
+              terminal.createSpan('[' + state.branch + ' ' + shortSha + '] ', 'term-ok'),
+              message
+            ]);
+            if (prepared.password) {
+              terminal.printLine(terminal.createSpan(' encrypted (AES-256-GCM) — 레포에는 암호문만 올라갔어', 'term-warn'));
+            }
+            terminal.printLine(terminal.createSpan(' 1 file changed: ' + current.path + ' · ' + PAGES_DELAY_NOTE, 'term-dim'));
+            messageField.value = 'post: update ' + getFileName(current.path);
+          });
         })
         .catch(function (error) {
           terminal.printError('commit 실패: ' + error.message);
@@ -590,13 +687,15 @@
     context.terminal.printLine(context.terminal.createSpan('logged out. 토큰을 이 탭에서 지웠어.', 'term-dim'));
   }
 
-  function commandNew(context, args, commandName) {
+  function commandNew(context, rawArgs, commandName) {
     var terminal = context.terminal;
     if (!requireOwner(terminal, commandName)) {
       return null;
     }
+    var isSecret = rawArgs.indexOf('--secret') !== -1;
+    var args = rawArgs.filter(function (arg) { return arg !== '--secret'; });
     if (args.length < 2) {
-      terminal.printError('usage: ' + commandName + ' <dir> <slug>   예) ' + commandName + ' ctf ret2libc');
+      terminal.printError('usage: ' + commandName + ' <dir> <slug> [--secret]   예) ' + commandName + ' ctf ret2libc');
       return null;
     }
     var folder = context.findFolder(args[0]);
@@ -604,9 +703,9 @@
       terminal.printError(commandName + ': ' + args[0] + ': No such directory (ls 로 폴더 이름 확인)');
       return null;
     }
-    var slug = args[1].replace(/\.md$/i, '').toLowerCase();
-    if (!SLUG_PATTERN.test(slug)) {
-      terminal.printError(commandName + ': 파일 이름은 영어 소문자, 숫자, 하이픈(-)만 쓸 수 있어.');
+    var slug = normalizeSlug(args[1]);
+    if (!SLUG_PATTERN.test(slug) || slug.length > SLUG_MAX_LENGTH) {
+      terminal.printError(commandName + ': 파일 이름은 한글, 영어, 숫자, 공백, -, _ 만 쓸 수 있어. (첫 글자는 글자나 숫자, ' + SLUG_MAX_LENGTH + '자 이하)');
       return null;
     }
     var now = new Date();
@@ -616,12 +715,13 @@
       'title: "제목을 입력하세요"',
       'date: ' + formatFrontMatterDate(now),
       'categories: [' + folder.title + ']',
-      'tags: []',
+      'tags: []'
+    ].concat(isSecret ? ['secret: true'] : []).concat([
       '---',
       '',
       '## ',
       ''
-    ].join('\n');
+    ]).join('\n');
 
     return fileExists(context.repo, path).then(function (exists) {
       if (exists) {
@@ -644,9 +744,18 @@
       return null;
     }
     terminal.printLine(terminal.createSpan('opening ' + path + ' ...', 'term-dim'));
-    return fetchFile(context.repo, path).then(function (file) {
-      openFileEditor(context, file);
-    });
+    return fetchFile(context.repo, path)
+      .then(function (file) { return unlockFileForEditing(context, file); })
+      .then(function (file) {
+        if (!file) {
+          terminal.printLine(terminal.createSpan('edit cancelled', 'term-dim'));
+          return;
+        }
+        if (file.secretPassword) {
+          terminal.printLine(terminal.createSpan('decrypted in browser — 저장하면 다시 암호화돼', 'term-warn'));
+        }
+        openFileEditor(context, file);
+      });
   }
 
   function commandRm(context, args) {
@@ -774,7 +883,7 @@
     var register = api.terminal.registerCommand;
     register('login', function () { return commandLogin(context); }, 'login', '(소유자) GitHub 토큰으로 편집 권한 켜기');
     register('logout', function () { commandLogout(context); }, 'logout', '편집 권한 끄기, 토큰 삭제');
-    register('new', function (args) { return commandNew(context, args, 'new'); }, 'new <dir> <slug>', '(소유자) 새 글 만들기 예) new ctf ret2libc');
+    register('new', function (args) { return commandNew(context, args, 'new'); }, 'new <dir> <slug> [--secret]', '(소유자) 새 글 만들기, 이름에 한글·공백 가능, --secret 이면 비밀글');
     register('touch', function (args) { return commandNew(context, args, 'touch'); });
     register('edit', function (args) { return commandEdit(context, args); }, 'edit [file]', '(소유자) 글 수정, 생략하면 지금 보는 글');
     register('rm', function (args) { return commandRm(context, args); }, 'rm <file>', '(소유자) 글 삭제');

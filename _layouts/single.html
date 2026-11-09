@@ -1,8 +1,58 @@
 ---
 layout: default
 ---
-<article class="doc">
-  <h1 class="doc__title"><span class="md-mark">#</span> {{ page.title }}</h1>
+<article class="doc{% if page.profile %} doc--profile{% endif %}">
+  {%- if page.profile %}
+  <header class="profile-hero">
+    <p class="profile-hero__label">{{ page.label | default: site.subtitle }}</p>
+    <h1 class="profile-hero__name">{{ page.name | default: site.title }}</h1>
+    {%- if page.intro %}
+    <p class="profile-hero__intro">{{ page.intro }}</p>
+    {%- endif %}
+    <ul class="profile-hero__links">
+      {%- for link in site.author.links %}
+      {%- assign link_label = link.label | downcase %}
+      <li><a href="{{ link.url }}" target="_blank" rel="noopener" title="{{ link.label }}" aria-label="{{ link.label }}">
+        {%- if link_label contains 'github' -%}
+        <svg viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+        {%- elsif link_label contains 'mail' -%}
+        <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M3.5 6.5l8.5 6.5 8.5-6.5" fill="none" stroke="currentColor" stroke-width="1.8"/></svg>
+        {%- elsif link_label contains 'linkedin' -%}
+        <span class="profile-hero__text-icon">in</span>
+        {%- elsif link_label contains 'discord' -%}
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5h14a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1h-8l-4 3v-3H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1z" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="9" cy="11" r="1.2" fill="currentColor"/><circle cx="15" cy="11" r="1.2" fill="currentColor"/></svg>
+        {%- elsif link_label contains 'blog' or link_label contains 'tistory' or link_label contains 'velog' -%}
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20l4-1 11-11-3-3L5 16l-1 4zM14 6l3 3" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>
+        {%- else -%}
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M3 12h18M12 3c3 3.5 3 14.5 0 18M12 3c-3 3.5-3 14.5 0 18" fill="none" stroke="currentColor" stroke-width="1.8"/></svg>
+        {%- endif -%}
+      </a></li>
+      {%- endfor %}
+      {%- if page.email %}
+      <li><a href="mailto:{{ page.email }}" title="Email" aria-label="Email"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M3.5 6.5l8.5 6.5 8.5-6.5" fill="none" stroke="currentColor" stroke-width="1.8"/></svg></a></li>
+      {%- endif %}
+    </ul>
+  </header>
+  {%- else %}
+  <h1 class="doc__title"><span class="md-mark">#</span> {% if page.secret %}<svg class="doc__lock" viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="10" width="14" height="10" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3" fill="none" stroke="currentColor" stroke-width="2"/></svg>{% endif %}<span id="doc-title-text">{{ page.title }}</span></h1>
+  {%- endif %}
+
+  {%- if page.secret and page.cipher %}
+  <section class="secret-lock" id="secret-lock"
+    data-path="{{ page.path }}"
+    data-v="{{ page.cipher.v }}" data-iter="{{ page.cipher.iter }}"
+    data-salt="{{ page.cipher.salt }}" data-iv="{{ page.cipher.iv }}" data-data="{{ page.cipher.data }}"
+    data-marked-src="{{ '/assets/js/vendor/marked.umd.js' | relative_url }}">
+    <svg class="secret-lock__icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="10" width="14" height="10" rx="2" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M8 10V7a4 4 0 0 1 8 0v3" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="12" cy="15" r="1.4" fill="currentColor"/></svg>
+    <p class="secret-lock__title">비밀글입니다</p>
+    <p class="secret-lock__hint">비밀번호를 입력하면 이 브라우저 안에서 복호화돼요.</p>
+    <form class="secret-lock__form" id="secret-form" autocomplete="off">
+      <input type="password" id="secret-password" placeholder="password" aria-label="password" autocomplete="current-password">
+      <button type="submit">Unlock</button>
+    </form>
+    <p class="secret-lock__error" id="secret-error" role="alert"></p>
+  </section>
+  {%- endif %}
 
   <div class="md" id="md">
     {{ content }}

@@ -113,7 +113,7 @@
                     </summary>
                     <ul class="tree">
                       {%- for post in folder_posts %}
-                      <li><a class="tree-file{% if post.url == page.url %} is-active{% endif %}" href="{{ post.url | relative_url }}" title="{{ post.title | escape }}"><span class="file-icon file-icon--md">M↓</span>{{ post.slug }}.md</a></li>
+                      <li><a class="tree-file{% if post.url == page.url %} is-active{% endif %}" href="{{ post.url | relative_url }}" title="{{ post.title | escape }}">{% if post.secret %}<span class="file-icon file-icon--lock"><svg viewBox="0 0 24 24" width="11" height="11" aria-hidden="true"><rect x="5" y="10" width="14" height="10" rx="2" fill="none" stroke="currentColor" stroke-width="2.4"/><path d="M8 10V7a4 4 0 0 1 8 0v3" fill="none" stroke="currentColor" stroke-width="2.4"/></svg></span>{% else %}<span class="file-icon file-icon--md">M↓</span>{% endif %}{{ post.slug }}.md</a></li>
                       {%- endfor %}
                     </ul>
                   </details>
@@ -212,11 +212,12 @@
   "tagsPage": {{ '/tags/' | relative_url | jsonify }},
   "postsPage": {{ '/categories/' | relative_url | jsonify }},
   "folders": [{% for folder in folders %}{"title": {{ folder.title | jsonify }}, "url": {{ folder.url | relative_url | jsonify }}}{% unless forloop.last %},{% endunless %}{% endfor %}],
-  "posts": [{% for post in site.posts %}{"title": {{ post.title | jsonify }}, "url": {{ post.url | relative_url | jsonify }}, "slug": {{ post.slug | jsonify }}, "path": {{ post.path | jsonify }}, "date": {{ post.date | date: "%Y-%m-%d" | jsonify }}, "categories": {{ post.categories | jsonify }}, "tags": {{ post.tags | jsonify }}}{% unless forloop.last %},{% endunless %}{% endfor %}],
+  "posts": [{% for post in site.posts %}{"title": {{ post.title | jsonify }}, "url": {{ post.url | relative_url | jsonify }}, "slug": {{ post.slug | jsonify }}, "path": {{ post.path | jsonify }}, "secret": {% if post.secret %}true{% else %}false{% endif %}, "date": {{ post.date | date: "%Y-%m-%d" | jsonify }}, "categories": {{ post.categories | jsonify }}, "tags": {{ post.tags | jsonify }}}{% unless forloop.last %},{% endunless %}{% endfor %}],
   "page": {"url": {{ page.url | jsonify }}, "path": {{ page.path | jsonify }}, "isPost": {% if page.collection == 'posts' %}true{% else %}false{% endif %}, "categories": {{ page.categories | jsonify }}, "taxonomy": {{ page.taxonomy | jsonify }}}
 }
 </script>
 <script src="{{ '/assets/js/vscode.js' | relative_url }}" defer></script>
+<script src="{{ '/assets/js/vscode-secret.js' | relative_url }}" defer></script>
 <script src="{{ '/assets/js/vscode-scm.js' | relative_url }}" defer></script>
 </body>
 </html>
