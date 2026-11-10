@@ -346,6 +346,299 @@
     return window.confirm('이 글은 블로그에 제대로 안 보일 수 있어.\n\n- ' + problems.join('\n- ') + '\n\n그래도 커밋할까?');
   }
 
+  /* ---------- asset upload (images / pdf) ---------- */
+
+  var UPLOAD_MAX_BYTES = 20 * 1024 * 1024;
+  var UPLOAD_TYPES = {
+    'image/png': 'png',
+    'image/jpeg': 'jpg',
+    'image/gif': 'gif',
+    'image/webp': 'webp',
+    'application/pdf': 'pdf'
+  };
+
+  function getUploadExtension(file) {
+    if (UPLOAD_TYPES[file.type]) {
+      return UPLOAD_TYPES[file.type];
+    }
+    var match = /\.([a-z0-9]+)$/i.exec(file.name || '');
+    var extension = match ? match[1].toLowerCase() : '';
+    var allowed = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'pdf'];
+    return allowed.indexOf(extension) !== -1 ? (extension === 'jpeg' ? 'jpg' : extension) : null;
+  }
+
+  function isPdfExtension(extension) {
+    return extension === 'pdf';
+  }
+
+  function getAssetFolder(repoPath) {
+    var postMatch = /^_posts\/(?:\d{4}-\d{2}-\d{2}-)?(.+?)\.(md|markdown)$/i.exec(repoPath || '');
+    if (postMatch) {
+      return 'assets/posts/' + sanitizeAssetBase(postMatch[1]) + '/';
+    }
+    return 'assets/uploads/';
+  }
+
+  function sanitizeAssetBase(text) {
+    var cleaned = String(text || '')
+      .normalize('NFC')
+      .replace(/[^\p{L}\p{N}._-]+/gu, '-')
+      .replace(/-+/g, '-')
+      .replace(/^[-.]+|[-.]+$/g, '');
+    return cleaned || 'file';
+  }
+
+  function createTimestamp() {
+    var now = new Date();
+    return formatDateOnly(now).replace(/-/g, '') + '-' + padNumber(now.getHours()) + padNumber(now.getMinutes()) + padNumber(now.getSeconds());
+  }
+
+  function createAssetName(file, extension, index) {
+    var originalBase = String(file.name || '').replace(/\.[^.]+$/, '');
+    var isGeneric = !originalBase || /^image$/i.test(originalBase);
+    var base = isGeneric ? 'image-' + createTimestamp() + (index ? '-' + (index + 1) : '') : sanitizeAssetBase(originalBase);
+    return base + '.' + extension;
+  }
+
+  function findFreeAssetPath(repo, folder, fileName, attempt) {
+    var tryCount = attempt || 0;
+    var candidate = tryCount === 0 ? fileName : fileName.replace(/(\.[^.]+)$/, '-' + (tryCount + 1) + '$1');
+    if (tryCount > 20) {
+      return Promise.reject(new Error('같은 이름의 파일이 너무 많아: ' + fileName));
+    }
+    return fileExists(repo, folder + candidate).then(function (exists) {
+      return exists ? findFreeAssetPath(repo, folder, fileName, tryCount + 1) : folder + candidate;
+    });
+  }
+
+  function readFileAsBase64(file) {
+    return new Promise(function (resolve, reject) {
+      var reader = new FileReader();
+      reader.onload = function () {
+        var bytes = new Uint8Array(reader.result);
+        var binary = '';
+        var chunkSize = 0x8000;
+        for (var i = 0; i < bytes.length; i += chunkSize) {
+          binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunkSize));
+        }
+        resolve(window.btoa(binary));
+      };
+      reader.onerror = function () {
+        reject(new Error((file.name || '파일') + ' 을(를) 읽지 못했어.'));
+      };
+      reader.readAsArrayBuffer(file);
+    });
+  }
+
+  function putBinaryFile(repo, path, base64Content, message) {
+    return githubRequest('PUT', contentsPath(repo, path), { message: message, content: base64Content, branch: state.branch });
+  }
+
+  function buildAssetSnippet(assetPath, extension, fileName) {
+    var url = '/' + encodeRepoPath(assetPath);
+    var label = fileName.replace(/\.[^.]+$/, '');
+    if (isPdfExtension(extension)) {
+      return '\n<div class="pdf-wrap">\n<object class="pdf-embed" data="' + url + '" type="application/pdf">\n' +
+        '<a href="' + url + '">' + fileName + ' 열기</a>\n' +
+        '</object>\n</div>\n\n[PDF 새 탭에서 열기](' + url + ')\n';
+    }
+    return '![' + label + '](' + url + ')';
+  }
+
+  function validateUploadFile(file) {
+    var extension = getUploadExtension(file);
+    if (!extension) {
+      return { error: (file.name || '파일') + ': png, jpg, gif, webp, pdf 만 올릴 수 있어.' };
+    }
+    if (file.size > UPLOAD_MAX_BYTES) {
+      return { error: (file.name || '파일') + ': ' + Math.round(UPLOAD_MAX_BYTES / 1024 / 1024) + 'MB 이하만 올릴 수 있어.' };
+    }
+    if (file.size === 0) {
+      return { error: (file.name || '파일') + ': 빈 파일이야.' };
+    }
+    return { extension: extension };
+  }
+
+  /* uploads one file, resolves { path, snippet } */
+  function uploadAsset(context, file, folder, index) {
+    var checked = validateUploadFile(file);
+    if (checked.error) {
+      return Promise.reject(new Error(checked.error));
+    }
+    var fileName = createAssetName(file, checked.extension, index);
+    return findFreeAssetPath(context.repo, folder, fileName).then(function (assetPath) {
+      return readFileAsBase64(file).then(function (base64Content) {
+        return putBinaryFile(context.repo, assetPath, base64Content, 'asset: add ' + getFileName(assetPath));
+      }).then(function () {
+        return { path: assetPath, snippet: buildAssetSnippet(assetPath, checked.extension, getFileName(assetPath)) };
+      });
+    });
+  }
+
+  function confirmPublicAssetForSecret(content) {
+    if (!window.vsblogSecret || !window.vsblogSecret.isSecretRequested(content)) {
+      return true;
+    }
+    return window.confirm('비밀글이지만 이미지/PDF 파일은 암호화되지 않고 공개 레포에 그대로 올라가. 파일 주소를 아는 사람은 볼 수 있어. 계속할까?');
+  }
+
+  function getFilesFromTransfer(transfer) {
+    if (!transfer) {
+      return [];
+    }
+    var files = Array.prototype.slice.call(transfer.files || []);
+    if (files.length === 0 && transfer.items) {
+      Array.prototype.forEach.call(transfer.items, function (item) {
+        if (item.kind === 'file') {
+          var file = item.getAsFile();
+          if (file) {
+            files.push(file);
+          }
+        }
+      });
+    }
+    return files;
+  }
+
+  /* make sure the upload starts its own paragraph */
+  function getBlankLinePrefix(textArea) {
+    var before = textArea.value.slice(0, textArea.selectionStart);
+    if (before === '' || /\n\n$/.test(before)) {
+      return '';
+    }
+    return /\n$/.test(before) ? '\n' : '\n\n';
+  }
+
+  function insertAtCursor(textArea, text) {
+    var start = textArea.selectionStart;
+    var end = textArea.selectionEnd;
+    textArea.value = textArea.value.slice(0, start) + text + textArea.value.slice(end);
+    textArea.selectionStart = textArea.selectionEnd = start + text.length;
+  }
+
+  function replaceOnce(textArea, search, replacement) {
+    var index = textArea.value.indexOf(search);
+    if (index === -1) {
+      insertAtCursor(textArea, replacement);
+      return;
+    }
+    var cursor = textArea.selectionStart;
+    textArea.value = textArea.value.slice(0, index) + replacement + textArea.value.slice(index + search.length);
+    var shift = replacement.length - search.length;
+    textArea.selectionStart = textArea.selectionEnd = cursor > index ? cursor + shift : cursor;
+  }
+
+  function uploadIntoEditor(context, files, textArea, repoPath, onChange) {
+    var terminal = context.terminal;
+    if (!confirmPublicAssetForSecret(textArea.value)) {
+      return Promise.resolve();
+    }
+    var folder = getAssetFolder(repoPath);
+    setBusy(true);
+    var chain = Promise.resolve();
+    files.forEach(function (file, index) {
+      var marker = '![업로드 중... ' + (file.name || 'image') + ' #' + Date.now() + index + ']()';
+      insertAtCursor(textArea, getBlankLinePrefix(textArea) + marker + '\n');
+      onChange();
+      chain = chain.then(function () {
+        return uploadAsset(context, file, folder, index)
+          .then(function (result) {
+            replaceOnce(textArea, marker, result.snippet);
+            terminal.printLine([terminal.createSpan('uploaded ', 'term-ok'), result.path]);
+          })
+          .catch(function (error) {
+            replaceOnce(textArea, marker, '');
+            terminal.printError('upload 실패: ' + error.message);
+            window.alert('업로드 실패\n' + error.message);
+          })
+          .then(onChange);
+      });
+    });
+    return chain.then(function () {
+      setBusy(false);
+      terminal.printLine(terminal.createSpan(' 이미지/PDF는 바로 커밋됐어. 글은 Ctrl+S 로 저장해야 반영돼.', 'term-dim'));
+      terminal.scrollToBottom();
+    });
+  }
+
+  function bindEditorUpload(context, textArea, getRepoPath, onChange) {
+    textArea.addEventListener('paste', function (event) {
+      var files = getFilesFromTransfer(event.clipboardData).filter(function (file) {
+        return /^image\//.test(file.type);
+      });
+      if (files.length === 0) {
+        return;
+      }
+      event.preventDefault();
+      uploadIntoEditor(context, files, textArea, getRepoPath(), onChange);
+    });
+    textArea.addEventListener('dragover', function (event) {
+      if (event.dataTransfer && Array.prototype.indexOf.call(event.dataTransfer.types || [], 'Files') !== -1) {
+        event.preventDefault();
+        textArea.classList.add('is-dragover');
+      }
+    });
+    textArea.addEventListener('dragleave', function () {
+      textArea.classList.remove('is-dragover');
+    });
+    textArea.addEventListener('drop', function (event) {
+      textArea.classList.remove('is-dragover');
+      var files = getFilesFromTransfer(event.dataTransfer);
+      if (files.length === 0) {
+        return;
+      }
+      event.preventDefault();
+      uploadIntoEditor(context, files, textArea, getRepoPath(), onChange);
+    });
+  }
+
+  function pickFiles() {
+    return new Promise(function (resolve) {
+      var input = document.createElement('input');
+      input.type = 'file';
+      input.multiple = true;
+      input.accept = 'image/png,image/jpeg,image/gif,image/webp,application/pdf';
+      input.addEventListener('change', function () {
+        resolve(Array.prototype.slice.call(input.files || []));
+      });
+      input.click();
+    });
+  }
+
+  function commandUpload(context) {
+    var terminal = context.terminal;
+    if (!requireOwner(terminal, 'upload')) {
+      return null;
+    }
+    var page = context.siteData.page || {};
+    var folder = getAssetFolder(page.isPost ? page.path : '');
+    terminal.printLine(terminal.createSpan('파일 선택창에서 이미지/PDF를 골라 줘 → ' + folder, 'term-dim'));
+    return pickFiles().then(function (files) {
+      if (files.length === 0) {
+        terminal.printLine(terminal.createSpan('upload cancelled', 'term-dim'));
+        return null;
+      }
+      setBusy(true);
+      var chain = Promise.resolve();
+      files.forEach(function (file, index) {
+        chain = chain.then(function () {
+          return uploadAsset(context, file, folder, index)
+            .then(function (result) {
+              terminal.printLine([terminal.createSpan('uploaded ', 'term-ok'), result.path]);
+              terminal.printLine(terminal.createSpan(result.snippet.trim(), 'term-key'));
+            })
+            .catch(function (error) {
+              terminal.printError('upload 실패: ' + error.message);
+            });
+        });
+      });
+      return chain.then(function () {
+        setBusy(false);
+        terminal.printLine(terminal.createSpan(' 위 줄을 글에 붙여넣으면 돼. ' + PAGES_DELAY_NOTE, 'term-dim'));
+      });
+    });
+  }
+
   /* ---------- secret post helpers ---------- */
 
   var MIN_SECRET_PASSWORD = 8;
@@ -587,6 +880,10 @@
     });
     textArea.addEventListener('scroll', function () {
       gutter.scrollTop = textArea.scrollTop;
+    });
+    bindEditorUpload(context, textArea, function () { return current.path; }, function () {
+      updateGutter(gutter, textArea.value);
+      refreshDirtyMark();
     });
     root.addEventListener('keydown', function (event) {
       if ((event.ctrlKey || event.metaKey) && (event.key === 's' || event.key === 'S')) {
@@ -888,6 +1185,7 @@
     register('edit', function (args) { return commandEdit(context, args); }, 'edit [file]', '(소유자) 글 수정, 생략하면 지금 보는 글');
     register('rm', function (args) { return commandRm(context, args); }, 'rm <file>', '(소유자) 글 삭제');
     register('git', function (args) { return commandGit(context, args); }, 'git status|log', '브랜치 상태, 최근 커밋 보기');
+    register('upload', function () { return commandUpload(context); }, 'upload', '(소유자) 이미지/PDF 올리기 (편집기에선 붙여넣기·드래그)');
 
     bindStatusBadge(context);
   }
