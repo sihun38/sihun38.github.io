@@ -238,6 +238,15 @@
     badge.textContent = label;
     badge.classList.toggle('is-owner', state.isOwner);
     badge.classList.toggle('is-busy', state.busy);
+    setOwnerView(state.isOwner);
+  }
+
+  /* owner sees the source-like view (line numbers, # marks); everyone else sees a preview */
+  function setOwnerView(isOwner) {
+    var ideNode = document.getElementById('ide');
+    if (ideNode) {
+      ideNode.classList.toggle('is-owner', isOwner);
+    }
   }
 
   function setBusy(busy) {

@@ -137,7 +137,7 @@
       <div class="tabs">
         <div class="tab is-active">
           <span class="file-icon file-icon--{{ tab_kind }}">{% if tab_kind == 'md' %}M↓{% elsif tab_kind == 'json' %}{}{% elsif tab_kind == 'dir' %}▸{% else %}≡{% endif %}</span>
-          <span>{{ tab_name }}</span>
+          <span class="tab__name tab__name--{{ tab_kind }}">{{ tab_name }}</span>
           <a class="tab__close" href="{{ '/' | relative_url }}" aria-label="close">×</a>
         </div>
       </div>

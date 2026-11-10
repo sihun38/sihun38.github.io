@@ -1047,3 +1047,33 @@ button.statusbar__item--accent:hover { background: #1a8ae6; }
 @media (max-width: 820px) {
   .md .pdf-embed { height: 60vh; min-height: 0; }
 }
+
+/* ==========================================================
+   Preview mode (not logged in) — like VS Code "Markdown Preview"
+   owner login adds .is-owner and restores the source-like view
+   ========================================================== */
+.ide:not(.is-owner) .frontmatter > .fm-line::before,
+.ide:not(.is-owner) .doc__title::before,
+.ide:not(.is-owner) .md > *::before { content: none; }
+
+.ide:not(.is-owner) .md-prefix,
+.ide:not(.is-owner) .doc__title > .md-mark { display: none; }
+
+.ide:not(.is-owner) .doc { padding-left: 44px; }
+
+.ide:not(.is-owner) .doc__title {
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--line-strong);
+  text-shadow: none;
+}
+.ide:not(.is-owner) .doc:not(.doc--profile) .md h2 {
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--line);
+}
+
+.ide:not(.is-owner) .tab__name--md::before { content: "Preview "; color: var(--fg-dim); }
+.ide:not(.is-owner) #status-line { display: none; }
+
+@media (max-width: 820px) {
+  .ide:not(.is-owner) .doc { padding-left: 16px; }
+}
