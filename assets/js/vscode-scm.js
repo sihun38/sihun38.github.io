@@ -264,6 +264,9 @@
       field.className = 'quick-input__field';
       field.type = options.password ? 'password' : 'text';
       field.placeholder = options.placeholder || '';
+      if (options.value) {
+        field.value = options.value;
+      }
       field.autocomplete = 'off';
       field.spellcheck = false;
 
@@ -271,6 +274,9 @@
         box.appendChild(title);
       }
       box.appendChild(field);
+      if (options.selectRange) {
+        window.setTimeout(function () { field.setSelectionRange(options.selectRange[0], options.selectRange[1]); }, 0);
+      }
       if (options.hintNodes) {
         var hint = document.createElement('p');
         hint.className = 'quick-input__hint';
@@ -767,8 +773,11 @@
     spacer.className = 'file-editor__spacer';
     var actions = document.createElement('div');
     actions.className = 'file-editor__actions';
+    var insertButton = createEditorButton('이미지 / PDF 삽입');
+    insertButton.title = '파일 선택창 열기 · Ctrl+V 붙여넣기 · 드래그도 가능';
     var saveButton = createEditorButton('Commit (Ctrl+S)', 'file-editor__btn--primary');
     var closeButton = createEditorButton('Close (Esc)');
+    actions.appendChild(insertButton);
     actions.appendChild(saveButton);
     actions.appendChild(closeButton);
     bar.appendChild(tab);
@@ -900,6 +909,22 @@
       }
     });
     saveButton.addEventListener('click', save);
+    insertButton.addEventListener('click', function () {
+      var selectionStart = textArea.selectionStart;
+      var selectionEnd = textArea.selectionEnd;
+      pickFiles().then(function (files) {
+        if (files.length === 0) {
+          return;
+        }
+        textArea.focus();
+        textArea.selectionStart = selectionStart;
+        textArea.selectionEnd = selectionEnd;
+        uploadIntoEditor(context, files, textArea, current.path, function () {
+          updateGutter(gutter, textArea.value);
+          refreshDirtyMark();
+        });
+      });
+    });
     closeButton.addEventListener('click', closeEditor);
     window.addEventListener('beforeunload', warnBeforeUnload);
 
@@ -1055,6 +1080,121 @@
       });
   }
 
+  /* ---------- rename (one commit via Git Data API) ---------- */
+
+  function gitPath(repo, suffix) {
+    return '/repos/' + repo.owner + '/' + repo.name + '/git/' + suffix;
+  }
+
+  function renameInOneCommit(repo, oldPath, newPath, blobSha, message) {
+    var branchRef = 'heads/' + encodeURIComponent(state.branch);
+    var parentSha;
+    return githubRequest('GET', gitPath(repo, 'ref/' + branchRef))
+      .then(function (ref) {
+        parentSha = ref.object.sha;
+        return githubRequest('GET', gitPath(repo, 'commits/' + parentSha));
+      })
+      .then(function (commit) {
+        return githubRequest('POST', gitPath(repo, 'trees'), {
+          base_tree: commit.tree.sha,
+          tree: [
+            { path: newPath, mode: '100644', type: 'blob', sha: blobSha },
+            { path: oldPath, mode: '100644', type: 'blob', sha: null }
+          ]
+        });
+      })
+      .then(function (tree) {
+        return githubRequest('POST', gitPath(repo, 'commits'), { message: message, tree: tree.sha, parents: [parentSha] });
+      })
+      .then(function (newCommit) {
+        return githubRequest('PATCH', gitPath(repo, 'refs/' + branchRef), { sha: newCommit.sha }).then(function () {
+          return newCommit;
+        });
+      });
+  }
+
+  function splitPostPath(path) {
+    var match = /^(_posts\/(?:.+\/)?)(\d{4}-\d{2}-\d{2}-)(.+)\.(md|markdown)$/i.exec(path);
+    return match ? { dir: match[1], datePrefix: match[2], slug: match[3], ext: match[4] } : null;
+  }
+
+  function buildRenamedPath(oldPath, input) {
+    var cleaned = String(input || '').trim();
+    if (cleaned.indexOf('/') !== -1) {
+      return { path: cleaned.replace(/^\/+/, '') };
+    }
+    var post = splitPostPath(oldPath);
+    if (!post) {
+      var dir = oldPath.slice(0, oldPath.lastIndexOf('/') + 1);
+      return { path: dir + cleaned };
+    }
+    var slug = normalizeSlug(cleaned);
+    if (!SLUG_PATTERN.test(slug) || slug.length > SLUG_MAX_LENGTH) {
+      return { error: '파일 이름은 한글, 영어, 숫자, 공백, -, _ 만 쓸 수 있어. (첫 글자는 글자나 숫자, ' + SLUG_MAX_LENGTH + '자 이하)' };
+    }
+    return { path: post.dir + post.datePrefix + slug + '.' + post.ext };
+  }
+
+  function commandMv(context, args) {
+    var terminal = context.terminal;
+    if (!requireOwner(terminal, 'mv')) {
+      return null;
+    }
+    var oldPath = resolveRepoPath(context, args[0]);
+    if (!args[0] || !oldPath) {
+      terminal.printError('mv: ' + (args[0] ? args[0] + ': No such file' : 'usage: mv <file>   예) mv cve-2015-2054.md'));
+      return null;
+    }
+    var post = splitPostPath(oldPath);
+    var currentName = post ? post.slug : getFileName(oldPath);
+    var newPath;
+    var blobSha;
+    return fetchFile(context.repo, oldPath)
+      .then(function (file) {
+        blobSha = file.sha;
+        return openQuickInput({
+          title: '새 파일 이름 (' + (post ? '날짜 ' + post.datePrefix.slice(0, -1) + ' 와 .md 는 자동 유지' : '경로 포함 가능') + ')',
+          value: currentName,
+          selectRange: [0, currentName.length]
+        });
+      })
+      .then(function (answer) {
+        if (answer === null || answer === undefined) {
+          terminal.printLine(terminal.createSpan('mv cancelled', 'term-dim'));
+          return null;
+        }
+        var built = buildRenamedPath(oldPath, answer);
+        if (built.error) {
+          terminal.printError('mv: ' + built.error);
+          return null;
+        }
+        newPath = built.path;
+        if (newPath === oldPath) {
+          terminal.printLine(terminal.createSpan('이름이 같아서 바꿀 게 없어.', 'term-dim'));
+          return null;
+        }
+        return fileExists(context.repo, newPath).then(function (exists) {
+          if (exists) {
+            terminal.printError('mv: ' + newPath + ' 가 이미 있어.');
+            return null;
+          }
+          setBusy(true);
+          var message = 'post: rename ' + getFileName(oldPath) + ' -> ' + getFileName(newPath);
+          return renameInOneCommit(context.repo, oldPath, newPath, blobSha, message).then(function (commit) {
+            terminal.printLine([terminal.createSpan('[' + state.branch + ' ' + String(commit.sha).slice(0, 7) + '] ', 'term-ok'), message]);
+            terminal.printLine(terminal.createSpan(' 글 주소도 바뀌어. 예전 주소로 링크한 곳이 있으면 고쳐 줘. ' + PAGES_DELAY_NOTE, 'term-dim'));
+          });
+        });
+      })
+      .then(function (result) {
+        setBusy(false);
+        return result;
+      }, function (error) {
+        setBusy(false);
+        throw error;
+      });
+  }
+
   function commandRm(context, args) {
     var terminal = context.terminal;
     if (!requireOwner(terminal, 'rm')) {
@@ -1184,6 +1324,7 @@
     register('touch', function (args) { return commandNew(context, args, 'touch'); });
     register('edit', function (args) { return commandEdit(context, args); }, 'edit [file]', '(소유자) 글 수정, 생략하면 지금 보는 글');
     register('rm', function (args) { return commandRm(context, args); }, 'rm <file>', '(소유자) 글 삭제');
+    register('mv', function (args) { return commandMv(context, args); }, 'mv <file>', '(소유자) 파일 이름 바꾸기');
     register('git', function (args) { return commandGit(context, args); }, 'git status|log', '브랜치 상태, 최근 커밋 보기');
     register('upload', function () { return commandUpload(context); }, 'upload', '(소유자) 이미지/PDF 올리기 (편집기에선 붙여넣기·드래그)');
 

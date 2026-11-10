@@ -14,11 +14,11 @@
   var SIDEBAR_MIN_WIDTH = 160;
   var SIDEBAR_COLLAPSE_WIDTH = 110;
   /* everything after these commands is one argument, so names may contain spaces */
-  var SINGLE_TARGET_COMMANDS = ['ls', 'll', 'dir', 'cd', 'cat', 'open', 'vim', 'code', 'edit', 'rm', 'tags'];
+  var SINGLE_TARGET_COMMANDS = ['ls', 'll', 'dir', 'cd', 'cat', 'open', 'vim', 'code', 'edit', 'rm', 'mv', 'tags'];
   var DIR_THEN_NAME_COMMANDS = ['new', 'touch'];
   var COMPLETION_KIND = {
     dir: ['ls', 'll', 'dir', 'cd', 'tree', 'new', 'touch'],
-    file: ['cat', 'open', 'vim', 'code', 'edit', 'rm'],
+    file: ['cat', 'open', 'vim', 'code', 'edit', 'rm', 'mv'],
     tag: ['tags']
   };
   var EDITOR_MIN_HEIGHT = 120;
