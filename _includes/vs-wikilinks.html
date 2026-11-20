@@ -1,0 +1,41 @@
+{%- comment -%}
+  Prints the [[targets]] found in include.source as JSON strings, comma separated.
+  - [[name]] and [[name|label]] are accepted
+  - ignored: target starting with a space (bash: [[ -f file ]]), with a line break,
+    longer than 80 chars, or inside code (<code>…</code> in HTML, `…` / ``` in Markdown)
+  include.source may be rendered HTML or raw Markdown, depending on build order.
+{%- endcomment -%}
+{%- capture wl_newline %}
+{% endcapture -%}
+{%- capture wl_escaped_tick %}\`{% endcapture -%}
+{%- assign wl_parts = include.source | split: '[[' -%}
+{%- assign wl_first = true -%}
+{%- assign wl_code_depth = 0 -%}
+{%- assign wl_ticks = 0 -%}
+{%- assign wl_is_html = false -%}
+{%- if include.source contains '</p>' or include.source contains '</h' or include.source contains '</li>' -%}{%- assign wl_is_html = true -%}{%- endif -%}
+{%- for wl_part in wl_parts -%}
+{%- unless forloop.first -%}
+{%- assign wl_tick_parity = wl_ticks | modulo: 2 -%}
+{%- if wl_code_depth <= 0 and wl_tick_parity == 0 and wl_part contains ']]' -%}
+{%- assign wl_raw = wl_part | split: ']]' | first -%}
+{%- assign wl_target = wl_raw | split: '|' | first -%}
+{%- assign wl_head = wl_target | slice: 0 -%}
+{%- if wl_target.size > 0 and wl_target.size <= 80 and wl_head != ' ' and wl_head != '[' -%}
+{%- unless wl_target contains wl_newline -%}
+{%- unless wl_first %},{% endunless -%}
+{{- wl_target | strip | jsonify -}}
+{%- assign wl_first = false -%}
+{%- endunless -%}
+{%- endif -%}
+{%- endif -%}
+{%- endunless -%}
+{%- assign wl_opens = wl_part | append: '~' | split: '<code' | size | minus: 1 -%}
+{%- assign wl_closes = wl_part | append: '~' | split: '</code>' | size | minus: 1 -%}
+{%- assign wl_code_depth = wl_code_depth | plus: wl_opens | minus: wl_closes -%}
+{%- unless wl_is_html -%}
+{%- assign wl_part_ticks = wl_part | append: '~' | split: '`' | size | minus: 1 -%}
+{%- assign wl_escaped_ticks = wl_part | append: '~' | split: wl_escaped_tick | size | minus: 1 -%}
+{%- assign wl_ticks = wl_ticks | plus: wl_part_ticks | minus: wl_escaped_ticks -%}
+{%- endunless -%}
+{%- endfor -%}

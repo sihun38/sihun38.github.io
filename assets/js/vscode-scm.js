@@ -1043,7 +1043,7 @@
     var path = '_posts/' + formatDateOnly(now) + '-' + slug + '.md';
     var template = [
       '---',
-      'title: "제목을 입력하세요"',
+      'title: "' + slug.replace(/"/g, '') + '"',
       'date: ' + formatFrontMatterDate(now),
       'categories: [' + folder.title + ']',
       'tags: []'
@@ -1302,6 +1302,29 @@
     });
   }
 
+  /* used by vscode.js when a missing [[wikilink]] is clicked */
+  function createFromWikilink(context, name, folderSlug) {
+    var terminal = context.terminal;
+    var folderSlugs = context.siteData.folders.map(function (folder) { return folder.slug; });
+    var folderPromise = folderSlug
+      ? Promise.resolve(folderSlug)
+      : openQuickInput({ title: '어느 폴더에 만들까? (' + folderSlugs.join(', ') + ')', value: folderSlugs[0] || '' });
+    return folderPromise.then(function (chosen) {
+      if (!chosen) {
+        return;
+      }
+      terminal.showPanel();
+      terminal.run('new ' + chosen.trim() + ' ' + name);
+    });
+  }
+
+  function exposeScmApi(context) {
+    window.vsblogScm = {
+      isOwner: function () { return state.isOwner; },
+      createFromWikilink: function (name, folderSlug) { return createFromWikilink(context, name, folderSlug); }
+    };
+  }
+
   function attach(api) {
     var repo = parseRepository(api.siteData.repository);
     if (!repo) {
@@ -1338,6 +1361,7 @@
     register('upload', function () { return commandUpload(context); }, 'upload', '(소유자) 이미지/PDF 올리기 (편집기에선 붙여넣기·드래그)');
 
     bindStatusBadge(context);
+    exposeScmApi(context);
   }
 
   if (window.vsblog) {

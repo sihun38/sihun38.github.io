@@ -35,6 +35,7 @@
     ['tree', '전체 글 트리 출력'],
     ['find <word>', '제목 / 태그 / 파일명 검색'],
     ['tags [tag]', '태그 목록, 또는 태그별 글'],
+    ['graph', '문서 연결 그래프 열기'],
     ['whoami', '블로그 주인 정보'],
     ['neofetch', '시스템 정보'],
     ['pwd', '현재 경로'],
@@ -66,7 +67,7 @@
   function createEmptySiteData() {
     return {
       user: 'guest', bio: '', title: '', subtitle: '',
-      home: '/', about: '/about/', tagsPage: '/tags/', postsPage: '/categories/',
+      home: '/', about: '/about/', tagsPage: '/tags/', postsPage: '/categories/', graphPage: '/graph/',
       folders: [], posts: [], page: {}
     };
   }
@@ -97,6 +98,8 @@
       url: post.url || '#',
       slug: post.slug || '',
       path: post.path || '',
+      links: Array.isArray(post.links) ? post.links : [],
+      secret: post.secret === true,
       date: post.date || '',
       categories: Array.isArray(post.categories) ? post.categories : [],
       tags: Array.isArray(post.tags) ? post.tags : []
@@ -455,7 +458,187 @@
     window.setTimeout(function () { button.textContent = 'copy'; }, 1400);
   }
 
+  /* ---------- wikilinks: [[name]] / [[name|label]] ---------- */
+
+  var linkIndex = null;
+  var WIKILINK_PATTERN = /\[\[([^\[\]|\n]{1,80}?)(?:\|([^\[\]\n]{1,80}?))?\]\]/g;
+  var WIKILINK_SKIP_TAGS = ['CODE', 'PRE', 'A', 'SCRIPT', 'STYLE', 'TEXTAREA'];
+
+  function normalizeLinkKey(text) {
+    return String(text || '')
+      .normalize('NFC')
+      .replace(/\.md$/i, '')
+      .trim()
+      .toLowerCase()
+      .replace(/[\s_-]+/g, ' ');
+  }
+
+  function buildLinkIndex(siteData) {
+    var index = {};
+    siteData.posts.forEach(function (post) {
+      index[normalizeLinkKey(post.slug)] = post;
+    });
+    siteData.posts.forEach(function (post) {
+      var titleKey = normalizeLinkKey(post.title);
+      if (!post.secret && titleKey && !index[titleKey]) {
+        index[titleKey] = post;
+      }
+    });
+    return index;
+  }
+
+  function resolveWikilink(target) {
+    if (!linkIndex) {
+      return null;
+    }
+    return linkIndex[normalizeLinkKey(target)] || null;
+  }
+
+  function isValidLinkTarget(target) {
+    return target.length > 0 && !/^\s/.test(target) && target.trim().length > 0;
+  }
+
+  function createWikilinkNode(target, label) {
+    var post = resolveWikilink(target);
+    var link = document.createElement('a');
+    link.className = 'wikilink' + (post ? '' : ' is-missing');
+    link.textContent = label || target.trim();
+    link.setAttribute('data-target', target.trim());
+    if (post) {
+      link.href = post.url;
+      link.title = post.secret ? '비밀글' : post.title;
+    } else {
+      link.href = '#';
+      link.title = '아직 없는 문서: ' + target.trim();
+    }
+    return link;
+  }
+
+  function shouldSkipTextNode(node, rootNode) {
+    var parent = node.parentNode;
+    while (parent && parent !== rootNode) {
+      if (WIKILINK_SKIP_TAGS.indexOf(parent.nodeName) !== -1) {
+        return true;
+      }
+      parent = parent.parentNode;
+    }
+    return false;
+  }
+
+  function replaceWikilinksInText(textNode) {
+    var text = textNode.nodeValue;
+    var fragment = document.createDocumentFragment();
+    var lastIndex = 0;
+    var changed = false;
+    var match;
+    WIKILINK_PATTERN.lastIndex = 0;
+    while ((match = WIKILINK_PATTERN.exec(text)) !== null) {
+      if (!isValidLinkTarget(match[1])) {
+        continue;
+      }
+      fragment.appendChild(document.createTextNode(text.slice(lastIndex, match.index)));
+      fragment.appendChild(createWikilinkNode(match[1], match[2]));
+      lastIndex = match.index + match[0].length;
+      changed = true;
+    }
+    if (!changed) {
+      return;
+    }
+    fragment.appendChild(document.createTextNode(text.slice(lastIndex)));
+    textNode.parentNode.replaceChild(fragment, textNode);
+  }
+
+  function renderWikilinks(markdownNode) {
+    var walker = document.createTreeWalker(markdownNode, NodeFilter.SHOW_TEXT);
+    var targets = [];
+    var node;
+    while ((node = walker.nextNode())) {
+      if (node.nodeValue.indexOf('[[') !== -1 && !shouldSkipTextNode(node, markdownNode)) {
+        targets.push(node);
+      }
+    }
+    targets.forEach(replaceWikilinksInText);
+  }
+
+  function getCurrentFolderSlug(siteData) {
+    var page = siteData.page || {};
+    var title = page.taxonomy || (page.isPost && page.categories && page.categories[0]) || '';
+    var folder = title ? findFolder(siteData, title) : null;
+    return folder ? folder.slug : null;
+  }
+
+  function showToast(message) {
+    var toast = document.createElement('div');
+    toast.className = 'toast';
+    toast.setAttribute('role', 'status');
+    toast.textContent = message;
+    document.body.appendChild(toast);
+    window.setTimeout(function () { toast.classList.add('is-leaving'); }, 1800);
+    window.setTimeout(function () { toast.remove(); }, 2200);
+  }
+
+  function bindMissingWikilinks(siteData) {
+    document.addEventListener('click', function (event) {
+      var link = event.target.closest('a.wikilink.is-missing');
+      if (!link) {
+        return;
+      }
+      event.preventDefault();
+      var target = link.getAttribute('data-target');
+      var scm = window.vsblogScm;
+      if (scm && scm.isOwner()) {
+        scm.createFromWikilink(target, getCurrentFolderSlug(siteData));
+      } else {
+        showToast('아직 작성되지 않은 문서예요: ' + target);
+      }
+    });
+  }
+
+  function findBacklinks(siteData) {
+    var page = siteData.page || {};
+    if (!page.isPost) {
+      return [];
+    }
+    return siteData.posts.filter(function (post) {
+      if (post.url === page.url) {
+        return false;
+      }
+      return post.links.some(function (target) {
+        var resolved = resolveWikilink(target);
+        return resolved && resolved.url === page.url;
+      });
+    });
+  }
+
+  function renderBacklinks(siteData) {
+    var docNode = document.querySelector('.doc');
+    var backlinks = findBacklinks(siteData);
+    if (!docNode || backlinks.length === 0 || document.getElementById('backlinks')) {
+      return;
+    }
+    var section = document.createElement('section');
+    section.className = 'backlinks';
+    section.id = 'backlinks';
+    var heading = document.createElement('p');
+    heading.className = 'backlinks__title';
+    heading.textContent = 'Linked mentions · ' + backlinks.length;
+    var list = document.createElement('ul');
+    backlinks.forEach(function (post) {
+      var item = document.createElement('li');
+      var link = document.createElement('a');
+      link.href = post.url;
+      link.textContent = post.secret ? post.slug + '.md' : post.title;
+      item.appendChild(link);
+      list.appendChild(item);
+    });
+    section.appendChild(heading);
+    section.appendChild(list);
+    var pager = docNode.querySelector('.doc__pager');
+    docNode.insertBefore(section, pager || null);
+  }
+
   function enhanceMarkdown(markdownNode) {
+    renderWikilinks(markdownNode);
     addHeadingPrefixes(markdownNode);
     buildOutline(markdownNode);
     enhanceCodeBlocks(markdownNode);
@@ -841,6 +1024,7 @@
       find: commandFind,
       grep: commandFind,
       tags: commandTags,
+      graph: function () { navigateTo(siteData.graphPage, 'graph.view'); },
       whoami: commandWhoami,
       neofetch: commandNeofetch,
       pwd: function () { printLine(currentPath.replace('~', '/home/' + promptUser)); },
@@ -1131,7 +1315,10 @@
       terminal: terminal,
       findPost: function (name) { return findPost(siteData, name); },
       findFolder: function (name) { return findFolder(siteData, name); },
-      enhanceMarkdown: enhanceMarkdown
+      enhanceMarkdown: enhanceMarkdown,
+      resolveWikilink: resolveWikilink,
+      normalizeLinkKey: normalizeLinkKey,
+      showToast: showToast
     };
     document.dispatchEvent(new CustomEvent('vsblog:ready', { detail: window.vsblog }));
   }
@@ -1144,6 +1331,7 @@
       return;
     }
     var siteData = loadSiteData();
+    linkIndex = buildLinkIndex(siteData);
     restoreLayoutState(ideNode);
 
     var markdownNode = document.getElementById('md');
@@ -1160,6 +1348,8 @@
     bindLayoutActions(ideNode, terminal);
     initPanelResize(ideNode);
     initSidebarResize(ideNode);
+    renderBacklinks(siteData);
+    bindMissingWikilinks(siteData);
     exposeApi(siteData, terminal);
   }
 
